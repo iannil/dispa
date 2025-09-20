@@ -1,0 +1,54 @@
+[server]
+bind_address = "0.0.0.0:8080"
+workers = 4
+keep_alive_timeout = 60
+request_timeout = 30
+
+[domains]
+intercept_domains = ["example.com", "api.example.com", "*.test.com"]
+exclude_domains = ["admin.example.com"]
+wildcard_support = true
+
+[[targets.targets]]
+name = "backend1"
+url = "http://192.168.1.100:3000"
+weight = 3
+timeout = 30
+
+[[targets.targets]]
+name = "backend2"
+url = "http://192.168.1.101:3000"
+weight = 2
+timeout = 30
+
+[[targets.targets]]
+name = "backend3"
+url = "http://192.168.1.102:3000"
+weight = 1
+timeout = 30
+
+[targets.load_balancing]
+type = "weighted"
+sticky_sessions = false
+
+[targets.health_check]
+enabled = true
+interval = 30
+timeout = 10
+healthy_threshold = 2
+unhealthy_threshold = 3
+
+[logging]
+enabled = true
+type = "file"
+retention_days = 30
+
+[logging.file]
+directory = "./logs"
+max_file_size = 104857600  # 100MB
+rotation = true
+
+[monitoring]
+enabled = true
+metrics_port = 9090
+health_check_port = 8081

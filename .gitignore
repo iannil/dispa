@@ -1,0 +1,30 @@
+# Generated files
+/target/
+/data/*.db
+/data/*.db-*
+/logs/*.log
+/logs/*.log.*
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Local configuration
+config/local-*.toml
+config/*.local.toml
+
+# Runtime files
+*.pid
+*.lock
+
+# Backup files
+*.bak
+*.backup
+*.tmp

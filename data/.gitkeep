@@ -1,0 +1,5 @@
+# Data directory for Dispa traffic proxy
+# This directory will contain SQLite database files when database logging is enabled
+
+*.db
+*.db-*

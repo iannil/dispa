@@ -1,0 +1,5 @@
+# Logs directory for Dispa traffic proxy
+# This directory will contain traffic logs when file logging is enabled
+
+*.log
+*.log.*
