@@ -4,11 +4,17 @@ use std::net::SocketAddr;
 use tokio::signal;
 use tracing::{info, warn};
 
-mod config;
-mod proxy;
-mod logger;
 mod balancer;
+mod circuit_breaker;
+mod config;
+mod error;
+mod graceful_shutdown;
+mod logger;
 mod monitoring;
+mod proxy;
+mod retry;
+mod routing;
+mod tls;
 
 use config::Config;
 use proxy::ProxyServer;

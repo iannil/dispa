@@ -187,8 +187,8 @@ MIT License - 详见 [LICENSE](LICENSE) 文件
 
 ## 📞 支持
 
-- **GitHub Issues**: [报告问题](https://github.com/your-repo/dispa/issues)
-- **讨论区**: [功能讨论](https://github.com/your-repo/dispa/discussions)
+- **GitHub Issues**: [报告问题](https://github.com/iannil/dispa/issues)
+- **讨论区**: [功能讨论](https://github.com/iannil/dispa/discussions)
 - **文档**: [在线文档](https://your-docs-site.com)
 
 ## 🌟 致谢
@@ -204,7 +204,7 @@ MIT License - 详见 [LICENSE](LICENSE) 文件
 
 <div align="center">
 
-**[快速开始](QUICKSTART.md)** • **[用户手册](USER_MANUAL.md)** • **[开发指南](DEVELOPMENT.md)**
+**[快速开始](./docs/QUICKSTART.md)** • **[用户手册](./docs/USER_MANUAL.md)** • **[开发指南](./docs/DEVELOPMENT.md)**
 
 Made with ❤️ in Rust
 

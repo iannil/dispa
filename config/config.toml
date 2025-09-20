@@ -40,8 +40,14 @@ unhealthy_threshold = 3
 
 [logging]
 enabled = true
-type = "file"
+type = "both"  # file | database | both
 retention_days = 30
+
+# 数据库日志配置 (当type为database或both时使用)
+[logging.database]
+url = "sqlite://./data/traffic.db"
+max_connections = 10
+connection_timeout = 30
 
 [logging.file]
 directory = "./logs"

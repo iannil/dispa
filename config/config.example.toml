@@ -1,0 +1,239 @@
+# Dispa 高性能流量拦截转发代理 - 完整配置示例
+# 复制此文件为 config.toml 并根据需要修改配置
+
+# ==================== 服务器配置 ====================
+[server]
+# 服务器绑定地址和端口
+bind_address = "0.0.0.0:8080"
+
+# 工作线程数 (可选，默认为CPU核心数)
+workers = 4
+
+# Keep-Alive 连接超时时间 (秒，可选)
+keep_alive_timeout = 60
+
+# 请求超时时间 (秒，可选)
+request_timeout = 30
+
+# ==================== 域名拦截配置 ====================
+[domains]
+# 需要拦截的域名列表 (支持通配符 *.example.com)
+intercept_domains = [
+    "example.com",
+    "*.test.com",
+    "api.myapp.com",
+    "*.dev.local"
+]
+
+# 排除的域名列表 (可选)
+exclude_domains = [
+    "health.example.com",
+    "ping.test.com"
+]
+
+# 是否启用通配符支持
+wildcard_support = true
+
+# ==================== 目标服务器配置 ====================
+[targets]
+# 后端目标服务器列表
+[[targets.targets]]
+name = "backend-1"
+url = "http://192.168.1.100:3000"
+weight = 3              # 权重 (用于加权负载均衡，可选)
+timeout = 30            # 超时时间 (秒，可选)
+
+[[targets.targets]]
+name = "backend-2"
+url = "http://192.168.1.101:3000"
+weight = 2
+timeout = 30
+
+[[targets.targets]]
+name = "backup-server"
+url = "http://192.168.1.200:8080"
+weight = 1
+timeout = 45
+
+# 负载均衡配置
+[targets.load_balancing]
+# 负载均衡类型: roundrobin | weighted | leastconnections | random
+type = "weighted"
+
+# 是否启用粘性会话 (基于客户端IP)
+sticky_sessions = false
+
+# 健康检查配置
+[targets.health_check]
+# 是否启用健康检查
+enabled = true
+
+# 健康检查间隔 (秒)
+interval = 30
+
+# 健康检查超时 (秒)
+timeout = 10
+
+# 健康阈值 (连续成功次数判定为健康)
+healthy_threshold = 2
+
+# 不健康阈值 (连续失败次数判定为不健康)
+unhealthy_threshold = 3
+
+# ==================== 日志配置 ====================
+[logging]
+# 是否启用日志记录
+enabled = true
+
+# 日志类型: file | database | both
+type = "both"
+
+# 日志保留天数 (可选，0表示永久保留)
+retention_days = 30
+
+# 数据库日志配置 (当type为database或both时使用)
+[logging.database]
+# 数据库连接URL
+# SQLite: sqlite://./data/traffic.db
+# PostgreSQL: postgresql://user:password@localhost:5432/dispa
+url = "sqlite://./data/traffic.db"
+
+# 最大连接池大小 (可选)
+max_connections = 10
+
+# 连接超时时间 (秒，可选)
+connection_timeout = 30
+
+# 文件日志配置 (当type为file或both时使用)
+[logging.file]
+# 日志文件目录
+directory = "./logs"
+
+# 单个日志文件最大大小 (字节，可选)
+max_file_size = 100000000  # 100MB
+
+# 是否启用日志轮转
+rotation = true
+
+# ==================== 监控配置 ====================
+[monitoring]
+# 是否启用监控
+enabled = true
+
+# Prometheus 指标端口
+metrics_port = 9090
+
+# 健康检查API端口
+health_check_port = 8081
+
+# ==================== 高级配置示例 ====================
+
+# 开发环境配置示例
+# [server]
+# bind_address = "127.0.0.1:8080"
+# workers = 2
+#
+# [domains]
+# intercept_domains = ["*.local.dev", "localhost"]
+#
+# [[targets.targets]]
+# name = "dev-server"
+# url = "http://localhost:3000"
+#
+# [targets.load_balancing]
+# type = "roundrobin"
+#
+# [targets.health_check]
+# enabled = false
+#
+# [logging]
+# enabled = true
+# type = "file"
+#
+# [logging.file]
+# directory = "./dev-logs"
+
+# 生产环境配置示例
+# [server]
+# bind_address = "0.0.0.0:80"
+# workers = 8
+# keep_alive_timeout = 120
+# request_timeout = 60
+#
+# [domains]
+# intercept_domains = ["api.mycompany.com", "*.service.internal"]
+# exclude_domains = ["health.api.mycompany.com"]
+#
+# [[targets.targets]]
+# name = "prod-api-1"
+# url = "http://10.0.1.10:8080"
+# weight = 5
+#
+# [[targets.targets]]
+# name = "prod-api-2"
+# url = "http://10.0.1.11:8080"
+# weight = 5
+#
+# [[targets.targets]]
+# name = "prod-api-3"
+# url = "http://10.0.1.12:8080"
+# weight = 3
+#
+# [targets.load_balancing]
+# type = "leastconnections"
+# sticky_sessions = true
+#
+# [targets.health_check]
+# enabled = true
+# interval = 15
+# timeout = 5
+# healthy_threshold = 3
+# unhealthy_threshold = 2
+#
+# [logging]
+# enabled = true
+# type = "database"
+# retention_days = 90
+#
+# [logging.database]
+# url = "postgresql://dispa_user:secure_password@db.internal:5432/dispa_prod"
+# max_connections = 20
+# connection_timeout = 10
+#
+# [monitoring]
+# enabled = true
+# metrics_port = 9090
+# health_check_port = 8081
+
+# ==================== 配置说明 ====================
+#
+# 1. 服务器配置
+#    - bind_address: 代理服务监听地址，支持IPv4和IPv6
+#    - workers: 工作线程数，建议设置为CPU核心数
+#    - keep_alive_timeout: HTTP Keep-Alive超时时间
+#    - request_timeout: 单个请求超时时间
+#
+# 2. 域名拦截
+#    - intercept_domains: 支持精确匹配和通配符匹配 (*.domain.com)
+#    - exclude_domains: 排除特定域名，即使匹配intercept_domains也不拦截
+#    - wildcard_support: 是否启用通配符支持
+#
+# 3. 负载均衡
+#    - roundrobin: 轮询分配
+#    - weighted: 按权重分配
+#    - leastconnections: 最少连接数优先
+#    - random: 随机分配
+#
+# 4. 健康检查
+#    - 自动检测后端服务器健康状态
+#    - 不健康的服务器会被临时移除，恢复后自动加回
+#
+# 5. 日志系统
+#    - file: 文件日志，支持按日期轮转
+#    - database: 数据库日志，支持SQLite和PostgreSQL
+#    - both: 同时使用文件和数据库日志
+#
+# 6. 监控指标
+#    - Prometheus格式指标导出
+#    - 健康检查API接口
+#    - 支持Grafana可视化

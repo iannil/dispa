@@ -1,22 +1,242 @@
 use anyhow::Result;
-use hyper::{Body, Request, Response, StatusCode};
 use hyper::service::{make_service_fn, service_fn};
 use hyper::Server;
+use hyper::{Body, Method, Request, Response, StatusCode};
 use metrics_exporter_prometheus::PrometheusBuilder;
+use serde_json::json;
 use std::convert::Infallible;
 use std::net::SocketAddr;
-use tracing::{info, error};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tokio::sync::RwLock;
+use tracing::{debug, error, info};
 
+use crate::balancer::LoadBalancer;
 use crate::config::MonitoringConfig;
+use crate::logger::TrafficLogger;
+// use crate::proxy::cached_handler::CachedProxyHandler;
+
+#[derive(Clone)]
+pub struct MetricsCollector {
+    start_time: Instant,
+    load_balancer: Option<Arc<LoadBalancer>>,
+    traffic_logger: Option<Arc<TrafficLogger>>,
+    // cached_handler: Option<Arc<CachedProxyHandler>>,
+}
+
+impl Default for MetricsCollector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl MetricsCollector {
+    pub fn new() -> Self {
+        Self {
+            start_time: Instant::now(),
+            load_balancer: None,
+            traffic_logger: None,
+            // cached_handler: None,
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn with_load_balancer(mut self, load_balancer: Arc<LoadBalancer>) -> Self {
+        self.load_balancer = Some(load_balancer);
+        self
+    }
+
+    #[allow(dead_code)]
+    pub fn with_traffic_logger(mut self, traffic_logger: Arc<TrafficLogger>) -> Self {
+        self.traffic_logger = Some(traffic_logger);
+        self
+    }
+
+    // pub fn with_cached_handler(mut self, cached_handler: Arc<CachedProxyHandler>) -> Self {
+    //     self.cached_handler = Some(cached_handler);
+    //     self
+    // }
+
+    pub async fn collect_metrics(&self) {
+        // Record uptime
+        let uptime_seconds = self.start_time.elapsed().as_secs();
+        metrics::gauge!("dispa_uptime_seconds").set(uptime_seconds as f64);
+
+        // Collect load balancer metrics
+        if let Some(ref lb) = self.load_balancer {
+            self.collect_load_balancer_metrics(lb).await;
+        }
+
+        // Collect traffic statistics
+        if let Some(ref logger) = self.traffic_logger {
+            self.collect_traffic_metrics(logger).await;
+        }
+
+        // Collect cache statistics
+        // if let Some(ref handler) = self.cached_handler {
+        //     self.collect_cache_metrics(handler).await;
+        // }
+
+        // Record memory usage
+        self.collect_system_metrics();
+    }
+
+    async fn collect_load_balancer_metrics(&self, load_balancer: &LoadBalancer) {
+        let summary = load_balancer.get_summary().await;
+        let health_status = load_balancer.get_health_status().await;
+        let connection_stats = load_balancer.get_connection_stats().await;
+
+        // Target health metrics
+        metrics::gauge!("dispa_targets_total").set(summary.total_targets as f64);
+        metrics::gauge!("dispa_targets_healthy").set(summary.healthy_targets as f64);
+
+        // Connection metrics
+        metrics::gauge!("dispa_active_connections_total")
+            .set(summary.total_active_connections as f64);
+        metrics::counter!("dispa_requests_total").increment(summary.total_requests);
+        metrics::counter!("dispa_errors_total").increment(summary.total_errors);
+        metrics::gauge!("dispa_error_rate_percent").set(summary.error_rate);
+
+        // Per-target metrics
+        for (target_name, health) in health_status {
+            let labels = [("target", target_name.clone())];
+
+            metrics::gauge!("dispa_target_healthy", &labels).set(if health.is_healthy {
+                1.0
+            } else {
+                0.0
+            });
+
+            metrics::gauge!("dispa_target_consecutive_failures", &labels)
+                .set(health.consecutive_failures as f64);
+
+            if let Some(response_time) = health.response_time_ms {
+                metrics::histogram!("dispa_target_health_check_duration_ms", &labels)
+                    .record(response_time as f64);
+            }
+        }
+
+        // Per-target connection metrics
+        for (target_name, stats) in connection_stats {
+            let labels = [("target", target_name.clone())];
+
+            metrics::gauge!("dispa_target_active_connections", &labels)
+                .set(stats.active_connections as f64);
+
+            metrics::counter!("dispa_target_requests_total", &labels)
+                .increment(stats.total_requests);
+
+            metrics::counter!("dispa_target_errors_total", &labels).increment(stats.total_errors);
+
+            metrics::gauge!("dispa_target_avg_response_time_ms", &labels)
+                .set(stats.avg_response_time_ms);
+        }
+    }
+
+    async fn collect_traffic_metrics(&self, traffic_logger: &TrafficLogger) {
+        // Get traffic stats for the last hour
+        if let Ok(stats) = traffic_logger.get_traffic_stats(1).await {
+            metrics::gauge!("dispa_traffic_requests_last_hour").set(stats.total_requests as f64);
+            metrics::gauge!("dispa_traffic_errors_last_hour").set(stats.error_count as f64);
+            metrics::gauge!("dispa_traffic_avg_duration_ms").set(stats.avg_duration);
+            metrics::gauge!("dispa_traffic_unique_clients_last_hour")
+                .set(stats.unique_clients as f64);
+            metrics::gauge!("dispa_traffic_bytes_total").set(stats.total_bytes as f64);
+        }
+
+        // Get per-target traffic stats
+        if let Ok(target_stats) = traffic_logger.get_traffic_by_target(1).await {
+            for stat in target_stats {
+                let labels = [("target", stat.target.clone())];
+
+                metrics::gauge!("dispa_target_traffic_requests_last_hour", &labels)
+                    .set(stat.request_count as f64);
+
+                metrics::gauge!("dispa_target_traffic_errors_last_hour", &labels)
+                    .set(stat.error_count as f64);
+
+                metrics::gauge!("dispa_target_traffic_avg_duration_ms", &labels)
+                    .set(stat.avg_duration);
+            }
+        }
+    }
+
+    /*
+    async fn collect_cache_metrics(&self, cached_handler: &CachedProxyHandler) {
+        if let Some(cache_stats) = cached_handler.get_cache_stats().await {
+            // Cache hit/miss metrics
+            metrics::gauge!("dispa_cache_hits_total").set(cache_stats.hits as f64);
+            metrics::gauge!("dispa_cache_misses_total").set(cache_stats.misses as f64);
+            metrics::gauge!("dispa_cache_hit_ratio_percent").set(cache_stats.hit_ratio);
+
+            // Cache operations metrics
+            metrics::gauge!("dispa_cache_stores_total").set(cache_stats.stores as f64);
+            metrics::gauge!("dispa_cache_evictions_total").set(cache_stats.evictions as f64);
+
+            // Cache size metrics
+            metrics::gauge!("dispa_cache_size_bytes").set(cache_stats.total_size as f64);
+            metrics::gauge!("dispa_cache_entry_count").set(cache_stats.entry_count as f64);
+
+            debug!(
+                "Cache metrics - hits: {}, misses: {}, hit_ratio: {:.2}%, size: {} bytes, entries: {}",
+                cache_stats.hits,
+                cache_stats.misses,
+                cache_stats.hit_ratio,
+                cache_stats.total_size,
+                cache_stats.entry_count
+            );
+        }
+    }
+    */
+
+    fn collect_system_metrics(&self) {
+        // Get memory usage (simplified - in production you'd use a proper system metrics library)
+        #[cfg(target_os = "linux")]
+        {
+            if let Ok(contents) = std::fs::read_to_string("/proc/self/status") {
+                for line in contents.lines() {
+                    if line.starts_with("VmRSS:") {
+                        if let Some(value_str) = line.split_whitespace().nth(1) {
+                            if let Ok(kb) = value_str.parse::<f64>() {
+                                metrics::gauge!("dispa_memory_usage_bytes").set(kb * 1024.0);
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
+        // For other platforms, we can estimate based on allocated memory
+        #[cfg(not(target_os = "linux"))]
+        {
+            // Rough estimation - in production use proper system metrics
+            metrics::gauge!("dispa_memory_usage_bytes").set(50_000_000.0); // ~50MB estimate
+        }
+    }
+}
+
+static METRICS_COLLECTOR: once_cell::sync::OnceCell<Arc<RwLock<MetricsCollector>>> =
+    once_cell::sync::OnceCell::new();
+
+#[allow(dead_code)]
+pub fn init_metrics_collector(collector: MetricsCollector) {
+    let _ = METRICS_COLLECTOR.set(Arc::new(RwLock::new(collector)));
+}
+
+pub async fn get_metrics_collector() -> Option<Arc<RwLock<MetricsCollector>>> {
+    METRICS_COLLECTOR.get().cloned()
+}
 
 pub async fn run_metrics_server(config: MonitoringConfig) -> Result<()> {
     if !config.enabled {
+        info!("Monitoring is disabled");
         return Ok(());
     }
 
     // Initialize Prometheus metrics exporter
     let builder = PrometheusBuilder::new();
-    let handle = builder.install()?;
+    builder.install()?;
 
     // Register custom metrics
     register_metrics();
@@ -24,25 +244,33 @@ pub async fn run_metrics_server(config: MonitoringConfig) -> Result<()> {
     let metrics_addr = SocketAddr::from(([0, 0, 0, 0], config.metrics_port));
     let health_addr = SocketAddr::from(([0, 0, 0, 0], config.health_check_port));
 
-    // Start metrics server
-    let metrics_service = make_service_fn(move |_conn| {
-        async move {
-            Ok::<_, Infallible>(service_fn(move |req| {
-                handle_metrics(req)
-            }))
+    // Start metrics collection loop
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(10));
+
+        loop {
+            interval.tick().await;
+
+            if let Some(collector) = get_metrics_collector().await {
+                let collector = collector.read().await;
+                collector.collect_metrics().await;
+            }
         }
     });
 
-    let metrics_server = Server::bind(&metrics_addr)
-        .serve(metrics_service);
+    // Start metrics server
+    let metrics_service =
+        make_service_fn(
+            move |_conn| async move { Ok::<_, Infallible>(service_fn(handle_metrics)) },
+        );
+
+    let metrics_server = Server::bind(&metrics_addr).serve(metrics_service);
 
     // Start health check server
-    let health_service = make_service_fn(|_conn| async {
-        Ok::<_, Infallible>(service_fn(handle_health))
-    });
+    let health_service =
+        make_service_fn(|_conn| async { Ok::<_, Infallible>(service_fn(handle_health)) });
 
-    let health_server = Server::bind(&health_addr)
-        .serve(health_service);
+    let health_server = Server::bind(&health_addr).serve(health_service);
 
     info!("Metrics server listening on {}", metrics_addr);
     info!("Health check server listening on {}", health_addr);
@@ -65,32 +293,1074 @@ pub async fn run_metrics_server(config: MonitoringConfig) -> Result<()> {
 }
 
 async fn handle_metrics(req: Request<Body>) -> Result<Response<Body>, Infallible> {
-    match req.uri().path() {
-        "/metrics" => {
-            // Create a simple response - in production you'd want proper metrics
-            let metrics = "# HELP dispa_requests_total Total requests\n# TYPE dispa_requests_total counter\ndispa_requests_total 0\n";
-            Ok(Response::new(Body::from(metrics)))
+    match (req.method(), req.uri().path()) {
+        (&Method::GET, "/metrics") => {
+            // Export Prometheus metrics - fallback to basic metrics for now
+            let metrics = generate_fallback_metrics().await;
+
+            Ok(Response::builder()
+                .header("Content-Type", "text/plain; version=0.0.4")
+                .body(Body::from(metrics))
+                .unwrap())
+        }
+        (&Method::GET, "/metrics/json") => {
+            // JSON format metrics for easier consumption
+            let metrics_json = generate_json_metrics().await;
+
+            Ok(Response::builder()
+                .header("Content-Type", "application/json")
+                .body(Body::from(metrics_json))
+                .unwrap())
         }
         _ => Ok(Response::builder()
             .status(StatusCode::NOT_FOUND)
-            .body(Body::from("Not found"))
+            .body(Body::from(
+                "Not found. Available endpoints: /metrics, /metrics/json",
+            ))
             .unwrap()),
     }
 }
 
-async fn handle_health(_req: Request<Body>) -> Result<Response<Body>, Infallible> {
-    Ok(Response::new(Body::from(r#"{"status":"healthy"}"#)))
+async fn handle_health(req: Request<Body>) -> Result<Response<Body>, Infallible> {
+    match (req.method(), req.uri().path()) {
+        (&Method::GET, "/health") | (&Method::GET, "/") => {
+            let health_response = json!({
+                "status": "healthy",
+                "timestamp": chrono::Utc::now().to_rfc3339(),
+                "uptime_seconds": get_uptime_seconds().await,
+                "version": env!("CARGO_PKG_VERSION")
+            });
+
+            Ok(Response::builder()
+                .header("Content-Type", "application/json")
+                .body(Body::from(health_response.to_string()))
+                .unwrap())
+        }
+        (&Method::GET, "/ready") => {
+            // Readiness check - more strict than health check
+            let is_ready = check_readiness().await;
+
+            let status_code = if is_ready {
+                StatusCode::OK
+            } else {
+                StatusCode::SERVICE_UNAVAILABLE
+            };
+
+            let response = json!({
+                "status": if is_ready { "ready" } else { "not_ready" },
+                "timestamp": chrono::Utc::now().to_rfc3339()
+            });
+
+            Ok(Response::builder()
+                .status(status_code)
+                .header("Content-Type", "application/json")
+                .body(Body::from(response.to_string()))
+                .unwrap())
+        }
+        (&Method::GET, "/metrics") => {
+            // Health endpoint that returns basic metrics
+            let metrics = json!({
+                "uptime_seconds": get_uptime_seconds().await,
+                "healthy_targets": get_healthy_targets_count().await,
+                "total_requests": get_total_requests().await,
+                "error_rate": get_error_rate().await
+            });
+
+            Ok(Response::builder()
+                .header("Content-Type", "application/json")
+                .body(Body::from(metrics.to_string()))
+                .unwrap())
+        }
+        _ => Ok(Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Body::from(
+                "Not found. Available endpoints: /health, /ready, /metrics",
+            ))
+            .unwrap()),
+    }
 }
 
-fn register_metrics() {
-    use metrics::{counter, histogram, gauge};
+async fn generate_fallback_metrics() -> String {
+    let uptime = get_uptime_seconds().await;
+    let healthy_targets = get_healthy_targets_count().await;
+    let total_requests = get_total_requests().await;
 
-    // Create metrics (they're automatically registered)
-    let _ = counter!("dispa_requests_total");
-    let _ = counter!("dispa_requests_errors_total");
-    let _ = histogram!("dispa_request_duration_seconds");
-    let _ = gauge!("dispa_target_healthy");
-    let _ = counter!("dispa_target_requests_total");
-    let _ = gauge!("dispa_active_connections");
-    let _ = gauge!("dispa_memory_usage_bytes");
+    format!(
+        "# HELP dispa_uptime_seconds Total uptime in seconds\n\
+         # TYPE dispa_uptime_seconds gauge\n\
+         dispa_uptime_seconds {}\n\
+         # HELP dispa_targets_healthy Number of healthy targets\n\
+         # TYPE dispa_targets_healthy gauge\n\
+         dispa_targets_healthy {}\n\
+         # HELP dispa_requests_total Total requests processed\n\
+         # TYPE dispa_requests_total counter\n\
+         dispa_requests_total {}\n",
+        uptime, healthy_targets, total_requests
+    )
+}
+
+async fn generate_json_metrics() -> String {
+    let metrics = json!({
+        "uptime_seconds": get_uptime_seconds().await,
+        "targets": {
+            "healthy": get_healthy_targets_count().await,
+            "total": get_total_targets_count().await
+        },
+        "requests": {
+            "total": get_total_requests().await,
+            "errors": get_total_errors().await,
+            "error_rate": get_error_rate().await
+        },
+        "connections": {
+            "active": get_active_connections().await
+        },
+        "cache": {
+            "hits": 0.0, // get_cache_hits().await,
+            "misses": 0.0, // get_cache_misses().await,
+            "hit_ratio_percent": 0.0, // get_cache_hit_ratio().await,
+            "size_bytes": 0.0, // get_cache_size().await,
+            "entry_count": 0.0 // get_cache_entry_count().await
+        },
+        "memory": {
+            "usage_bytes": get_memory_usage().await
+        },
+        "timestamp": chrono::Utc::now().to_rfc3339()
+    });
+
+    metrics.to_string()
+}
+
+async fn get_uptime_seconds() -> f64 {
+    if let Some(collector) = get_metrics_collector().await {
+        let collector = collector.read().await;
+        collector.start_time.elapsed().as_secs_f64()
+    } else {
+        0.0
+    }
+}
+
+async fn check_readiness() -> bool {
+    if let Some(collector) = get_metrics_collector().await {
+        let collector = collector.read().await;
+
+        // Check if we have at least one healthy target
+        if let Some(ref lb) = collector.load_balancer {
+            let summary = lb.get_summary().await;
+            summary.healthy_targets > 0
+        } else {
+            true // If no load balancer, assume ready
+        }
+    } else {
+        false
+    }
+}
+
+async fn get_healthy_targets_count() -> f64 {
+    if let Some(collector) = get_metrics_collector().await {
+        let collector = collector.read().await;
+        if let Some(ref lb) = collector.load_balancer {
+            let summary = lb.get_summary().await;
+            summary.healthy_targets as f64
+        } else {
+            0.0
+        }
+    } else {
+        0.0
+    }
+}
+
+async fn get_total_targets_count() -> f64 {
+    if let Some(collector) = get_metrics_collector().await {
+        let collector = collector.read().await;
+        if let Some(ref lb) = collector.load_balancer {
+            let summary = lb.get_summary().await;
+            summary.total_targets as f64
+        } else {
+            0.0
+        }
+    } else {
+        0.0
+    }
+}
+
+async fn get_total_requests() -> f64 {
+    if let Some(collector) = get_metrics_collector().await {
+        let collector = collector.read().await;
+        if let Some(ref lb) = collector.load_balancer {
+            let summary = lb.get_summary().await;
+            summary.total_requests as f64
+        } else {
+            0.0
+        }
+    } else {
+        0.0
+    }
+}
+
+async fn get_total_errors() -> f64 {
+    if let Some(collector) = get_metrics_collector().await {
+        let collector = collector.read().await;
+        if let Some(ref lb) = collector.load_balancer {
+            let summary = lb.get_summary().await;
+            summary.total_errors as f64
+        } else {
+            0.0
+        }
+    } else {
+        0.0
+    }
+}
+
+async fn get_error_rate() -> f64 {
+    if let Some(collector) = get_metrics_collector().await {
+        let collector = collector.read().await;
+        if let Some(ref lb) = collector.load_balancer {
+            let summary = lb.get_summary().await;
+            summary.error_rate
+        } else {
+            0.0
+        }
+    } else {
+        0.0
+    }
+}
+
+async fn get_active_connections() -> f64 {
+    if let Some(collector) = get_metrics_collector().await {
+        let collector = collector.read().await;
+        if let Some(ref lb) = collector.load_balancer {
+            let summary = lb.get_summary().await;
+            summary.total_active_connections as f64
+        } else {
+            0.0
+        }
+    } else {
+        0.0
+    }
+}
+
+async fn get_memory_usage() -> f64 {
+    // Simplified memory usage - in production use proper system metrics
+    50_000_000.0 // 50MB estimate
+}
+
+/*
+async fn get_cache_hits() -> f64 {
+    if let Some(collector) = get_metrics_collector().await {
+        let collector = collector.read().await;
+        if let Some(ref handler) = collector.cached_handler {
+            if let Some(stats) = handler.get_cache_stats().await {
+                return stats.hits as f64;
+            }
+        }
+    }
+    0.0
+}
+
+async fn get_cache_misses() -> f64 {
+    if let Some(collector) = get_metrics_collector().await {
+        let collector = collector.read().await;
+        if let Some(ref handler) = collector.cached_handler {
+            if let Some(stats) = handler.get_cache_stats().await {
+                return stats.misses as f64;
+            }
+        }
+    }
+    0.0
+}
+
+async fn get_cache_hit_ratio() -> f64 {
+    if let Some(collector) = get_metrics_collector().await {
+        let collector = collector.read().await;
+        if let Some(ref handler) = collector.cached_handler {
+            if let Some(stats) = handler.get_cache_stats().await {
+                return stats.hit_ratio;
+            }
+        }
+    }
+    0.0
+}
+
+async fn get_cache_size() -> f64 {
+    if let Some(collector) = get_metrics_collector().await {
+        let collector = collector.read().await;
+        if let Some(ref handler) = collector.cached_handler {
+            if let Some(stats) = handler.get_cache_stats().await {
+                return stats.total_size as f64;
+            }
+        }
+    }
+    0.0
+}
+
+async fn get_cache_entry_count() -> f64 {
+    if let Some(collector) = get_metrics_collector().await {
+        let collector = collector.read().await;
+        if let Some(ref handler) = collector.cached_handler {
+            if let Some(stats) = handler.get_cache_stats().await {
+                return stats.entry_count as f64;
+            }
+        }
+    }
+    0.0
+}
+*/
+
+fn register_metrics() {
+    // Counter metrics
+    let _ = metrics::counter!("dispa_requests_total");
+    let _ = metrics::counter!("dispa_errors_total");
+    let _ = metrics::counter!("dispa_target_requests_total");
+    let _ = metrics::counter!("dispa_target_errors_total");
+
+    // Gauge metrics
+    let _ = metrics::gauge!("dispa_uptime_seconds");
+    let _ = metrics::gauge!("dispa_targets_total");
+    let _ = metrics::gauge!("dispa_targets_healthy");
+    let _ = metrics::gauge!("dispa_target_healthy");
+    let _ = metrics::gauge!("dispa_active_connections_total");
+    let _ = metrics::gauge!("dispa_target_active_connections");
+    let _ = metrics::gauge!("dispa_memory_usage_bytes");
+    let _ = metrics::gauge!("dispa_error_rate_percent");
+    let _ = metrics::gauge!("dispa_target_consecutive_failures");
+    let _ = metrics::gauge!("dispa_target_avg_response_time_ms");
+
+    // Histogram metrics
+    let _ = metrics::histogram!("dispa_request_duration_seconds");
+    let _ = metrics::histogram!("dispa_target_health_check_duration_ms");
+
+    // Traffic metrics
+    let _ = metrics::gauge!("dispa_traffic_requests_last_hour");
+    let _ = metrics::gauge!("dispa_traffic_errors_last_hour");
+    let _ = metrics::gauge!("dispa_traffic_avg_duration_ms");
+    let _ = metrics::gauge!("dispa_traffic_unique_clients_last_hour");
+    let _ = metrics::gauge!("dispa_traffic_bytes_total");
+    let _ = metrics::gauge!("dispa_target_traffic_requests_last_hour");
+    let _ = metrics::gauge!("dispa_target_traffic_errors_last_hour");
+    let _ = metrics::gauge!("dispa_target_traffic_avg_duration_ms");
+
+    // Cache metrics
+    let _ = metrics::gauge!("dispa_cache_hits_total");
+    let _ = metrics::gauge!("dispa_cache_misses_total");
+    let _ = metrics::gauge!("dispa_cache_hit_ratio_percent");
+    let _ = metrics::gauge!("dispa_cache_stores_total");
+    let _ = metrics::gauge!("dispa_cache_evictions_total");
+    let _ = metrics::gauge!("dispa_cache_size_bytes");
+    let _ = metrics::gauge!("dispa_cache_entry_count");
+
+    info!("Prometheus metrics registered successfully");
+}
+
+// Helper function to record request metrics
+#[allow(dead_code)]
+pub fn record_request_metric(method: &str, status_code: u16, duration: Duration, target: &str) {
+    // Record basic metrics without labels for now to avoid lifetime issues
+    metrics::counter!("dispa_requests_total").increment(1);
+
+    if status_code >= 400 {
+        metrics::counter!("dispa_errors_total").increment(1);
+    }
+
+    metrics::histogram!("dispa_request_duration_seconds").record(duration.as_secs_f64());
+
+    // Log the metrics for debugging
+    debug!(
+        "Recorded metrics: method={}, status={}, duration={:.3}s, target={}",
+        method,
+        status_code,
+        duration.as_secs_f64(),
+        target
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::balancer::load_balancer::{ConnectionStats, LoadBalancer};
+    use crate::config::{
+        HealthCheckConfig, LoadBalancingConfig, LoadBalancingType, MonitoringConfig, Target,
+        TargetConfig,
+    };
+    use crate::config::{LoggingConfig, LoggingType};
+    use crate::logger::TrafficLogger;
+    use std::time::Duration;
+    use tokio::time::sleep;
+
+    fn create_test_target(name: &str) -> Target {
+        Target {
+            name: name.to_string(),
+            url: format!("http://test-{}.com", name),
+            weight: Some(1),
+            timeout: Some(30),
+        }
+    }
+
+    fn create_test_load_balancer() -> LoadBalancer {
+        let targets = vec![create_test_target("server1"), create_test_target("server2")];
+
+        let config = TargetConfig {
+            targets,
+            load_balancing: LoadBalancingConfig {
+                lb_type: LoadBalancingType::RoundRobin,
+                sticky_sessions: false,
+            },
+            health_check: HealthCheckConfig {
+                enabled: false, // Disable for tests
+                interval: 30,
+                timeout: 10,
+                healthy_threshold: 2,
+                unhealthy_threshold: 3,
+            },
+        };
+
+        LoadBalancer::new_for_test(config)
+    }
+
+    fn create_test_traffic_logger() -> TrafficLogger {
+        let config = LoggingConfig {
+            enabled: false, // Disable for tests
+            log_type: LoggingType::File,
+            database: None,
+            file: None,
+            retention_days: None,
+        };
+        TrafficLogger::new(config)
+    }
+
+    #[tokio::test]
+    async fn test_metrics_collector_creation() {
+        let collector = MetricsCollector::new();
+
+        assert!(collector.load_balancer.is_none());
+        assert!(collector.traffic_logger.is_none());
+        assert!(collector.start_time.elapsed().as_millis() < 100); // Should be very recent
+    }
+
+    #[tokio::test]
+    async fn test_metrics_collector_with_load_balancer() {
+        let load_balancer = Arc::new(create_test_load_balancer());
+        let collector = MetricsCollector::new().with_load_balancer(Arc::clone(&load_balancer));
+
+        assert!(collector.load_balancer.is_some());
+        assert!(collector.traffic_logger.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_metrics_collector_with_traffic_logger() {
+        let traffic_logger = Arc::new(create_test_traffic_logger());
+        let collector = MetricsCollector::new().with_traffic_logger(Arc::clone(&traffic_logger));
+
+        assert!(collector.load_balancer.is_none());
+        assert!(collector.traffic_logger.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_metrics_collector_with_both_components() {
+        let load_balancer = Arc::new(create_test_load_balancer());
+        let traffic_logger = Arc::new(create_test_traffic_logger());
+
+        let collector = MetricsCollector::new()
+            .with_load_balancer(Arc::clone(&load_balancer))
+            .with_traffic_logger(Arc::clone(&traffic_logger));
+
+        assert!(collector.load_balancer.is_some());
+        assert!(collector.traffic_logger.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_collect_metrics_basic() {
+        let collector = MetricsCollector::new();
+
+        // This should not panic and should complete
+        collector.collect_metrics().await;
+
+        // Verify uptime is reasonable (should be very small for new collector)
+        let uptime = collector.start_time.elapsed().as_secs();
+        assert!(uptime < 5, "Uptime should be very small for new collector");
+    }
+
+    #[tokio::test]
+    async fn test_collect_metrics_with_load_balancer() {
+        let load_balancer = Arc::new(create_test_load_balancer());
+        let collector = MetricsCollector::new().with_load_balancer(Arc::clone(&load_balancer));
+
+        // Add some test connection stats
+        load_balancer
+            .set_connection_stats(
+                "server1",
+                ConnectionStats {
+                    active_connections: 5,
+                    total_requests: 100,
+                    total_errors: 2,
+                    last_request: Some(std::time::Instant::now()),
+                    avg_response_time_ms: 150.0,
+                },
+            )
+            .await;
+
+        load_balancer
+            .set_connection_stats(
+                "server2",
+                ConnectionStats {
+                    active_connections: 3,
+                    total_requests: 80,
+                    total_errors: 1,
+                    last_request: Some(std::time::Instant::now()),
+                    avg_response_time_ms: 120.0,
+                },
+            )
+            .await;
+
+        // This should collect load balancer metrics without panicking
+        collector.collect_metrics().await;
+    }
+
+    #[tokio::test]
+    async fn test_collect_load_balancer_metrics() {
+        let load_balancer = Arc::new(create_test_load_balancer());
+        let collector = MetricsCollector::new().with_load_balancer(Arc::clone(&load_balancer));
+
+        // Add test data
+        load_balancer
+            .set_connection_stats(
+                "server1",
+                ConnectionStats {
+                    active_connections: 10,
+                    total_requests: 500,
+                    total_errors: 5,
+                    last_request: Some(std::time::Instant::now()),
+                    avg_response_time_ms: 200.0,
+                },
+            )
+            .await;
+
+        // Test the specific load balancer metrics collection
+        collector
+            .collect_load_balancer_metrics(&load_balancer)
+            .await;
+
+        // Verify the load balancer summary is accessible
+        let summary = load_balancer.get_summary().await;
+        assert_eq!(summary.total_targets, 2);
+        assert_eq!(summary.total_active_connections, 10);
+        assert_eq!(summary.total_requests, 500);
+        assert_eq!(summary.total_errors, 5);
+    }
+
+    #[tokio::test]
+    async fn test_collect_system_metrics() {
+        let collector = MetricsCollector::new();
+
+        // Test system metrics collection (should not panic)
+        collector.collect_system_metrics();
+
+        // This method is internal and we mainly test it doesn't crash
+    }
+
+    #[tokio::test]
+    async fn test_uptime_measurement() {
+        let collector = MetricsCollector::new();
+
+        // Wait a small amount of time
+        sleep(Duration::from_millis(10)).await;
+
+        let uptime_before = collector.start_time.elapsed();
+
+        // Wait a bit more
+        sleep(Duration::from_millis(10)).await;
+
+        let uptime_after = collector.start_time.elapsed();
+
+        // Verify uptime is increasing
+        assert!(uptime_after > uptime_before);
+        assert!(uptime_after.as_millis() >= 20); // At least 20ms passed
+    }
+
+    #[tokio::test]
+    async fn test_record_request_metric() {
+        // Test the global request metric recording function
+        record_request_metric("GET", 200, Duration::from_millis(150), "backend1");
+        record_request_metric("POST", 500, Duration::from_millis(300), "backend2");
+        record_request_metric("PUT", 404, Duration::from_millis(50), "backend1");
+
+        // These calls should not panic and should record metrics
+        // The actual metric values are handled by the metrics crate
+    }
+
+    #[tokio::test]
+    async fn test_monitoring_config_creation() {
+        let config = MonitoringConfig {
+            enabled: true,
+            metrics_port: 9090,
+            health_check_port: 8081,
+        };
+
+        assert!(config.enabled);
+        assert_eq!(config.metrics_port, 9090);
+        assert_eq!(config.health_check_port, 8081);
+    }
+
+    #[tokio::test]
+    async fn test_clone_metrics_collector() {
+        let load_balancer = Arc::new(create_test_load_balancer());
+        let original = MetricsCollector::new().with_load_balancer(Arc::clone(&load_balancer));
+
+        let cloned = original.clone();
+
+        // Verify the clone has the same properties
+        assert!(cloned.load_balancer.is_some());
+        assert!(cloned.traffic_logger.is_none());
+
+        // Both should be able to collect metrics
+        original.collect_metrics().await;
+        cloned.collect_metrics().await;
+    }
+
+    #[tokio::test]
+    async fn test_metrics_collection_with_empty_stats() {
+        let load_balancer = Arc::new(create_test_load_balancer());
+        let collector = MetricsCollector::new().with_load_balancer(Arc::clone(&load_balancer));
+
+        // Test with no connection stats (empty state)
+        collector.collect_metrics().await;
+
+        let summary = load_balancer.get_summary().await;
+        assert_eq!(summary.total_targets, 2);
+        // When health checks are disabled, healthy_targets may be 0 initially
+        assert!(summary.healthy_targets <= 2);
+        assert_eq!(summary.total_active_connections, 0);
+        assert_eq!(summary.total_requests, 0);
+        assert_eq!(summary.total_errors, 0);
+    }
+
+    #[tokio::test]
+    async fn test_metrics_collection_performance() {
+        let load_balancer = Arc::new(create_test_load_balancer());
+        let traffic_logger = Arc::new(create_test_traffic_logger());
+
+        let collector = MetricsCollector::new()
+            .with_load_balancer(Arc::clone(&load_balancer))
+            .with_traffic_logger(Arc::clone(&traffic_logger));
+
+        // Add some test data
+        for i in 0..5 {
+            load_balancer
+                .set_connection_stats(
+                    &format!("server{}", i),
+                    ConnectionStats {
+                        active_connections: i as u32,
+                        total_requests: (i * 100) as u64,
+                        total_errors: i as u64,
+                        last_request: Some(std::time::Instant::now()),
+                        avg_response_time_ms: (i * 50) as f64,
+                    },
+                )
+                .await;
+        }
+
+        let start = std::time::Instant::now();
+
+        // Collect metrics multiple times
+        for _ in 0..10 {
+            collector.collect_metrics().await;
+        }
+
+        let duration = start.elapsed();
+
+        // Metrics collection should be reasonably fast
+        assert!(
+            duration.as_millis() < 1000,
+            "Metrics collection took too long: {:?}",
+            duration
+        );
+    }
+
+    #[tokio::test]
+    async fn test_request_metric_recording_edge_cases() {
+        // Test various HTTP methods and status codes
+        let methods = ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"];
+        let status_codes = [200, 201, 301, 400, 401, 404, 500, 502, 503];
+        let durations = [
+            Duration::from_millis(1),
+            Duration::from_millis(100),
+            Duration::from_secs(1),
+            Duration::from_secs(5),
+        ];
+
+        for method in &methods {
+            for &status_code in &status_codes {
+                for &duration in &durations {
+                    record_request_metric(method, status_code, duration, "test_target");
+                }
+            }
+        }
+
+        // All calls should complete without panicking
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_metrics_collection() {
+        let load_balancer = Arc::new(create_test_load_balancer());
+        let collector =
+            Arc::new(MetricsCollector::new().with_load_balancer(Arc::clone(&load_balancer)));
+
+        let mut handles = Vec::new();
+
+        // Spawn multiple concurrent metrics collection tasks
+        for i in 0..5 {
+            let collector_clone = Arc::clone(&collector);
+            let handle = tokio::spawn(async move {
+                for _ in 0..10 {
+                    collector_clone.collect_metrics().await;
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                }
+                i
+            });
+            handles.push(handle);
+        }
+
+        // Wait for all tasks to complete
+        for handle in handles {
+            let result = handle.await.unwrap();
+            assert!(result < 5);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_metrics_collector_builder_pattern() {
+        let load_balancer = Arc::new(create_test_load_balancer());
+        let traffic_logger = Arc::new(create_test_traffic_logger());
+
+        // Test the builder pattern works correctly
+        let collector = MetricsCollector::new()
+            .with_load_balancer(Arc::clone(&load_balancer))
+            .with_traffic_logger(Arc::clone(&traffic_logger));
+
+        assert!(collector.load_balancer.is_some());
+        assert!(collector.traffic_logger.is_some());
+
+        // Test that the order doesn't matter
+        let collector2 = MetricsCollector::new()
+            .with_traffic_logger(Arc::clone(&traffic_logger))
+            .with_load_balancer(Arc::clone(&load_balancer));
+
+        assert!(collector2.load_balancer.is_some());
+        assert!(collector2.traffic_logger.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_handle_metrics_prometheus_endpoint() {
+        use hyper::{Body, Method, Request};
+
+        // Test /metrics endpoint
+        let req = Request::builder()
+            .method(Method::GET)
+            .uri("/metrics")
+            .body(Body::empty())
+            .unwrap();
+
+        let response = handle_metrics(req).await.unwrap();
+
+        assert_eq!(response.status(), hyper::StatusCode::OK);
+        assert_eq!(
+            response.headers().get("content-type").unwrap(),
+            "text/plain; version=0.0.4"
+        );
+
+        // Check that response body is not empty
+        let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
+        let body_str = String::from_utf8(body_bytes.to_vec()).unwrap();
+        assert!(!body_str.is_empty(), "Metrics response should not be empty");
+        assert!(
+            body_str.contains("dispa_uptime_seconds"),
+            "Should contain uptime metric"
+        );
+        assert!(
+            body_str.contains("dispa_targets_healthy"),
+            "Should contain healthy targets metric"
+        );
+        assert!(
+            body_str.contains("dispa_requests_total"),
+            "Should contain requests metric"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_handle_metrics_json_endpoint() {
+        use hyper::{Body, Method, Request};
+
+        // Test /metrics/json endpoint
+        let req = Request::builder()
+            .method(Method::GET)
+            .uri("/metrics/json")
+            .body(Body::empty())
+            .unwrap();
+
+        let response = handle_metrics(req).await.unwrap();
+
+        assert_eq!(response.status(), hyper::StatusCode::OK);
+        assert_eq!(
+            response.headers().get("content-type").unwrap(),
+            "application/json"
+        );
+
+        // Check that response body is valid JSON
+        let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
+        let body_str = String::from_utf8(body_bytes.to_vec()).unwrap();
+        assert!(
+            !body_str.is_empty(),
+            "JSON metrics response should not be empty"
+        );
+
+        // Parse as JSON to verify format
+        let json_value: serde_json::Value =
+            serde_json::from_str(&body_str).expect("Response should be valid JSON");
+
+        assert!(json_value.is_object(), "Response should be a JSON object");
+        assert!(
+            json_value.get("uptime_seconds").is_some(),
+            "Should contain uptime"
+        );
+        assert!(
+            json_value.get("targets").is_some(),
+            "Should contain targets section"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_handle_metrics_not_found() {
+        use hyper::{Body, Method, Request};
+
+        // Test unknown endpoint
+        let req = Request::builder()
+            .method(Method::GET)
+            .uri("/unknown")
+            .body(Body::empty())
+            .unwrap();
+
+        let response = handle_metrics(req).await.unwrap();
+
+        assert_eq!(response.status(), hyper::StatusCode::NOT_FOUND);
+
+        let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
+        let body_str = String::from_utf8(body_bytes.to_vec()).unwrap();
+        assert!(
+            body_str.contains("Not found"),
+            "Should contain error message"
+        );
+        assert!(
+            body_str.contains("/metrics"),
+            "Should mention available endpoints"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_handle_metrics_wrong_method() {
+        use hyper::{Body, Method, Request};
+
+        // Test POST method (should return 404)
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri("/metrics")
+            .body(Body::empty())
+            .unwrap();
+
+        let response = handle_metrics(req).await.unwrap();
+
+        assert_eq!(response.status(), hyper::StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_handle_health_endpoint() {
+        use hyper::{Body, Method, Request};
+
+        // Test /health endpoint
+        let req = Request::builder()
+            .method(Method::GET)
+            .uri("/health")
+            .body(Body::empty())
+            .unwrap();
+
+        let response = handle_health(req).await.unwrap();
+
+        assert_eq!(response.status(), hyper::StatusCode::OK);
+        assert_eq!(
+            response.headers().get("content-type").unwrap(),
+            "application/json"
+        );
+
+        // Check response body
+        let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
+        let body_str = String::from_utf8(body_bytes.to_vec()).unwrap();
+
+        let json_value: serde_json::Value =
+            serde_json::from_str(&body_str).expect("Health response should be valid JSON");
+
+        assert_eq!(json_value["status"], "healthy");
+        assert!(json_value.get("timestamp").is_some());
+        assert!(json_value.get("uptime_seconds").is_some());
+        assert!(json_value.get("version").is_some());
+    }
+
+    #[tokio::test]
+    async fn test_handle_health_root_endpoint() {
+        use hyper::{Body, Method, Request};
+
+        // Test root endpoint "/" also works for health
+        let req = Request::builder()
+            .method(Method::GET)
+            .uri("/")
+            .body(Body::empty())
+            .unwrap();
+
+        let response = handle_health(req).await.unwrap();
+
+        assert_eq!(response.status(), hyper::StatusCode::OK);
+        assert_eq!(
+            response.headers().get("content-type").unwrap(),
+            "application/json"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_handle_health_ready_endpoint() {
+        use hyper::{Body, Method, Request};
+
+        // Test /ready endpoint
+        let req = Request::builder()
+            .method(Method::GET)
+            .uri("/ready")
+            .body(Body::empty())
+            .unwrap();
+
+        let response = handle_health(req).await.unwrap();
+
+        // Status could be OK or SERVICE_UNAVAILABLE depending on readiness
+        assert!(
+            response.status() == hyper::StatusCode::OK
+                || response.status() == hyper::StatusCode::SERVICE_UNAVAILABLE
+        );
+
+        let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
+        let body_str = String::from_utf8(body_bytes.to_vec()).unwrap();
+
+        let json_value: serde_json::Value =
+            serde_json::from_str(&body_str).expect("Ready response should be valid JSON");
+
+        // The JSON structure might vary depending on readiness status
+        assert!(
+            json_value.get("ready").is_some() || json_value.get("status").is_some(),
+            "Should contain ready status or general status"
+        );
+        assert!(json_value.get("timestamp").is_some());
+    }
+
+    #[tokio::test]
+    async fn test_generate_fallback_metrics() {
+        let metrics = generate_fallback_metrics().await;
+
+        assert!(!metrics.is_empty(), "Fallback metrics should not be empty");
+        assert!(
+            metrics.contains("dispa_uptime_seconds"),
+            "Should contain uptime metric"
+        );
+        assert!(
+            metrics.contains("dispa_targets_healthy"),
+            "Should contain healthy targets metric"
+        );
+        assert!(
+            metrics.contains("dispa_requests_total"),
+            "Should contain requests metric"
+        );
+
+        // Check Prometheus format
+        let lines: Vec<&str> = metrics.lines().collect();
+        let metric_lines: Vec<&str> = lines
+            .iter()
+            .filter(|line| !line.starts_with('#') && !line.is_empty())
+            .copied()
+            .collect();
+
+        assert!(!metric_lines.is_empty(), "Should have actual metric values");
+    }
+
+    #[tokio::test]
+    async fn test_generate_json_metrics() {
+        let metrics = generate_json_metrics().await;
+
+        assert!(!metrics.is_empty(), "JSON metrics should not be empty");
+
+        // Parse as JSON to verify format
+        let json_value: serde_json::Value =
+            serde_json::from_str(&metrics).expect("Should be valid JSON");
+
+        assert!(json_value.is_object(), "Should be a JSON object");
+        assert!(
+            json_value.get("uptime_seconds").is_some(),
+            "Should contain uptime"
+        );
+        assert!(
+            json_value.get("targets").is_some(),
+            "Should contain targets section"
+        );
+
+        let targets = json_value.get("targets").unwrap();
+        assert!(
+            targets.get("healthy").is_some(),
+            "Should contain healthy targets count"
+        );
+        assert!(
+            targets.get("total").is_some(),
+            "Should contain total targets count"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_register_metrics() {
+        // Test that register_metrics doesn't panic
+        register_metrics();
+
+        // Call it again to test idempotency
+        register_metrics();
+    }
+
+    #[tokio::test]
+    async fn test_record_request_metric_http_endpoints() {
+        use std::time::Duration;
+
+        // Test that record_request_metric doesn't panic with valid inputs
+        record_request_metric("GET", 200, Duration::from_millis(100), "backend1");
+        record_request_metric("POST", 404, Duration::from_millis(50), "backend2");
+        record_request_metric("PUT", 500, Duration::from_millis(200), "backend3");
+    }
+
+    #[tokio::test]
+    async fn test_request_metric_recording_http_edge_cases() {
+        use std::time::Duration;
+
+        // Test edge cases
+        record_request_metric("", 0, Duration::from_millis(0), "");
+        record_request_metric(
+            "VERY_LONG_METHOD_NAME",
+            999,
+            Duration::from_secs(1000),
+            "very_long_target_name_that_should_still_work",
+        );
+
+        // Test with unusual but valid HTTP methods
+        record_request_metric("PATCH", 204, Duration::from_micros(1), "fast_backend");
+        record_request_metric("OPTIONS", 200, Duration::from_nanos(500), "options_backend");
+    }
+
+    #[tokio::test]
+    async fn test_check_readiness() {
+        let is_ready = check_readiness().await;
+
+        // In a clean test environment without a metrics collector, readiness should be false
+        // This is actually the expected behavior since no load balancer is configured
+        assert!(
+            !is_ready,
+            "System should not be ready without configured metrics collector"
+        );
+    }
 }
