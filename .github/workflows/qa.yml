@@ -189,6 +189,11 @@ jobs:
       with:
         tool: cargo-minimal-versions
 
+    - name: Install cargo-hack
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-hack
+
     - name: Check minimal versions
       run: cargo minimal-versions check
       continue-on-error: true
