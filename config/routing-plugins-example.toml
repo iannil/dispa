@@ -1,0 +1,69 @@
+[server]
+bind_address = "0.0.0.0:8080"
+workers = 2
+keep_alive_timeout = 30
+request_timeout = 15
+
+[domains]
+intercept_domains = ["example.com"]
+wildcard_support = true
+
+[[targets.targets]]
+name = "backend"
+url = "http://127.0.0.1:3000"
+weight = 1
+timeout = 30
+
+[targets.load_balancing]
+type = "roundrobin"
+sticky_sessions = false
+
+[targets.health_check]
+enabled = false
+interval = 30
+timeout = 5
+healthy_threshold = 2
+unhealthy_threshold = 3
+
+[plugins]
+enabled = true
+apply_before_domain_match = false
+
+[[plugins.plugins]]
+name = "inject"
+type = "headerinjector"
+enabled = true
+stage = "both"
+error_strategy = "continue"
+config = { request_headers = { "x-global" = "1" }, response_headers = { "x-global-resp" = "1" } }
+
+[[plugins.plugins]]
+name = "route-tag"
+type = "headerinjector"
+enabled = true
+stage = "both"
+error_strategy = "continue"
+config = { request_headers = { "x-route" = "api" }, response_headers = { "x-route-resp" = "ok" } }
+
+[routing]
+enable_logging = true
+default_target = "backend"
+
+[[routing.rules]]
+name = "api-rule"
+priority = 100
+enabled = true
+target = "backend"
+
+[routing.rules.conditions]
+method = ["GET", "POST"]
+[routing.rules.conditions.path]
+prefix = "/api"
+
+[routing.rules.actions]
+[routing.rules.actions.headers]
+set = { "x-routed" = "yes" }
+
+# per-route 插件链：按名称引用已注册的插件，按数组顺序执行
+routing.rules.plugins_request = ["route-tag"]
+routing.rules.plugins_response = ["route-tag"]

@@ -9,14 +9,15 @@ use uuid::Uuid;
 use crate::balancer::LoadBalancer;
 use dispa::cache::{CacheEntry, CacheStats, ConditionalResult, ETagManager, InMemoryCache, PolicyEngine};
 use crate::config::{CacheConfig, DomainConfig};
+use std::sync::RwLock as StdRwLock;
 use crate::logger::TrafficLogger;
 use crate::routing::RoutingEngine;
 
 /// Cache-enabled proxy handler
 #[derive(Clone)]
 pub struct CachedProxyHandler {
-    domain_config: DomainConfig,
-    load_balancer: LoadBalancer,
+    domain_config: std::sync::Arc<StdRwLock<DomainConfig>>,
+    load_balancer: std::sync::Arc<tokio::sync::RwLock<LoadBalancer>>,
     traffic_logger: TrafficLogger,
     routing_engine: Option<RoutingEngine>,
     cache: Option<InMemoryCache>,
@@ -27,8 +28,8 @@ pub struct CachedProxyHandler {
 impl CachedProxyHandler {
     /// Create a new cache-enabled proxy handler
     pub fn new(
-        domain_config: DomainConfig,
-        load_balancer: LoadBalancer,
+        domain_config: std::sync::Arc<StdRwLock<DomainConfig>>,
+        load_balancer: std::sync::Arc<tokio::sync::RwLock<LoadBalancer>>,
         traffic_logger: TrafficLogger,
         cache_config: Option<CacheConfig>,
     ) -> Self {
@@ -58,8 +59,8 @@ impl CachedProxyHandler {
 
     /// Create a new cache-enabled proxy handler with routing
     pub fn with_routing(
-        domain_config: DomainConfig,
-        load_balancer: LoadBalancer,
+        domain_config: std::sync::Arc<StdRwLock<DomainConfig>>,
+        load_balancer: std::sync::Arc<tokio::sync::RwLock<LoadBalancer>>,
         traffic_logger: TrafficLogger,
         routing_engine: RoutingEngine,
         cache_config: Option<CacheConfig>,
@@ -251,7 +252,8 @@ impl CachedProxyHandler {
             (decision.target.clone(), transformed_req)
         } else {
             // Fallback to traditional load balancer selection
-            let target = match self.load_balancer.get_target().await {
+            let lb = self.load_balancer.read().await;
+            let target = match lb.get_target().await {
                 Some(target) => target,
                 None => {
                     warn!("No healthy targets available");
@@ -270,7 +272,8 @@ impl CachedProxyHandler {
         };
 
         // Get the actual target URL
-        let target = match self.load_balancer.get_target_by_name(&target_name).await {
+        let lb = self.load_balancer.read().await;
+        let target = match lb.get_target_by_name(&target_name).await {
             Some(target) => target,
             None => {
                 warn!("Target '{}' not found or not healthy", target_name);
@@ -418,9 +421,10 @@ impl CachedProxyHandler {
     fn should_intercept_domain(&self, host: &str) -> bool {
         // Remove port from host if present
         let host = host.split(':').next().unwrap_or(host);
+        let cfg = self.domain_config.read().unwrap();
 
         // Check exclude list first
-        if let Some(ref exclude_domains) = self.domain_config.exclude_domains {
+        if let Some(ref exclude_domains) = cfg.exclude_domains {
             if exclude_domains
                 .iter()
                 .any(|domain| self.matches_domain(host, domain))
@@ -430,15 +434,15 @@ impl CachedProxyHandler {
         }
 
         // Check intercept list
-        self.domain_config
-            .intercept_domains
+        cfg.intercept_domains
             .iter()
             .any(|domain| self.matches_domain(host, domain))
     }
 
     /// Check if host matches domain pattern
     fn matches_domain(&self, host: &str, pattern: &str) -> bool {
-        if !self.domain_config.wildcard_support {
+        let cfg = self.domain_config.read().unwrap();
+        if !cfg.wildcard_support {
             return host == pattern;
         }
 
@@ -449,98 +453,13 @@ impl CachedProxyHandler {
         }
     }
 
-    /// Forward request to target
+    /// Forward request to target using shared pooled hyper client (streaming bodies)
     async fn forward_request(
         &self,
-        mut req: Request<Body>,
+        req: Request<Body>,
         target_url: &str,
     ) -> Result<Response<Body>> {
-        let client = reqwest::Client::new();
-
-        // Build target URL
-        let target_uri: Uri = target_url.parse()?;
-        let path_and_query = req
-            .uri()
-            .path_and_query()
-            .map(|pq| pq.as_str())
-            .unwrap_or("/");
-
-        let url = format!(
-            "{}://{}{}",
-            target_uri.scheme_str().unwrap_or("http"),
-            target_uri.authority().unwrap(),
-            path_and_query
-        );
-
-        // Convert method
-        let method = match *req.method() {
-            Method::GET => reqwest::Method::GET,
-            Method::POST => reqwest::Method::POST,
-            Method::PUT => reqwest::Method::PUT,
-            Method::DELETE => reqwest::Method::DELETE,
-            Method::HEAD => reqwest::Method::HEAD,
-            Method::OPTIONS => reqwest::Method::OPTIONS,
-            Method::PATCH => reqwest::Method::PATCH,
-            _ => reqwest::Method::GET,
-        };
-
-        // Collect body
-        let body_bytes = hyper::body::to_bytes(req.body_mut())
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to read request body: {}", e))?;
-
-        // Build request
-        let mut request_builder = client.request(method, &url);
-
-        // Copy headers (excluding hop-by-hop headers)
-        for (name, value) in req.headers() {
-            let name_str = name.as_str();
-            if !is_hop_by_hop_header(name_str) {
-                if let Ok(value_str) = value.to_str() {
-                    request_builder = request_builder.header(name_str, value_str);
-                }
-            }
-        }
-
-        // Add forwarding headers
-        request_builder = request_builder
-            .header("X-Forwarded-For", "127.0.0.1")
-            .header("X-Forwarded-Proto", "http")
-            .body(body_bytes);
-
-        // Send request
-        let response = request_builder
-            .send()
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to send request: {}", e))?;
-
-        // Convert response
-        let status_code = response.status().as_u16();
-        let headers = response.headers().clone();
-        let body_text = response
-            .text()
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to read response body: {}", e))?;
-
-        let mut response_builder = Response::builder().status(status_code);
-
-        // Copy response headers (excluding hop-by-hop headers)
-        for (name, value) in headers {
-            if let Some(name) = name {
-                if !is_hop_by_hop_header(name.as_str()) {
-                    if let Ok(value_str) = value.to_str() {
-                        if let (Ok(header_name), Ok(header_value)) = (
-                            HeaderName::from_bytes(name.as_str().as_bytes()),
-                            HeaderValue::from_str(value_str),
-                        ) {
-                            response_builder = response_builder.header(header_name, header_value);
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok(response_builder.body(Body::from(body_text))?)
+        super::http_client::forward(req, target_url).await
     }
 
     /// Get cache statistics

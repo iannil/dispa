@@ -2,7 +2,7 @@ use anyhow::Result;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::Server;
 use hyper::{Body, Method, Request, Response, StatusCode};
-use metrics_exporter_prometheus::PrometheusBuilder;
+use metrics_exporter_prometheus::{Matcher, PrometheusBuilder};
 use serde_json::json;
 use std::convert::Infallible;
 use std::net::SocketAddr;
@@ -234,9 +234,78 @@ pub async fn run_metrics_server(config: MonitoringConfig) -> Result<()> {
         return Ok(());
     }
 
-    // Initialize Prometheus metrics exporter
-    let builder = PrometheusBuilder::new();
-    builder.install()?;
+    // Initialize Prometheus metrics exporter with custom buckets
+    // Build the builder via Result-chaining to avoid move-after-error issues
+    let mut has_log_write_buckets = false;
+    if let Some(list) = &config.histogram_buckets {
+        has_log_write_buckets = list
+            .iter()
+            .any(|i| i.metric == "dispa_log_write_duration_ms");
+    }
+
+    let mut res: Result<PrometheusBuilder, metrics_exporter_prometheus::BuildError> =
+        Ok(PrometheusBuilder::new());
+
+    if let Some(list) = &config.histogram_buckets {
+        for item in list {
+            let metric = item.metric.clone();
+            // Convert ms->s when metric uses seconds to keep units consistent
+            let buckets = if metric.ends_with("_seconds") {
+                item.buckets_ms.iter().map(|v| v / 1000.0).collect::<Vec<f64>>()
+            } else {
+                item.buckets_ms.clone()
+            };
+            res = res.and_then(|b| b.set_buckets_for_metric(Matcher::Full(metric), &buckets));
+        }
+    }
+
+    if !has_log_write_buckets {
+        const DEFAULT_LOG_WRITE_MS_BUCKETS: &[f64] = &[
+            0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 25.0, 50.0, 100.0, 250.0, 500.0, 1000.0, 2500.0,
+            5000.0,
+        ];
+        res = res.and_then(|b| {
+            b.set_buckets_for_metric(
+                Matcher::Full("dispa_log_write_duration_ms".to_string()),
+                DEFAULT_LOG_WRITE_MS_BUCKETS,
+            )
+        });
+    }
+
+    // Defaults for other histograms if not provided
+    // dispa_target_health_check_duration_ms (ms)
+    const DEFAULT_HC_MS_BUCKETS: &[f64] = &[
+        1.0, 2.5, 5.0, 10.0, 25.0, 50.0, 100.0, 250.0, 500.0, 1000.0, 2500.0, 5000.0,
+    ];
+    res = res.and_then(|b| {
+        b.set_buckets_for_metric(
+            Matcher::Full("dispa_target_health_check_duration_ms".to_string()),
+            DEFAULT_HC_MS_BUCKETS,
+        )
+    });
+
+    // dispa_request_duration_seconds (seconds)
+    const DEFAULT_REQ_S_BUCKETS: &[f64] = &[
+        0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0,
+    ];
+    res = res.and_then(|b| {
+        b.set_buckets_for_metric(
+            Matcher::Full("dispa_request_duration_seconds".to_string()),
+            DEFAULT_REQ_S_BUCKETS,
+        )
+    });
+
+    let builder = match res {
+        Ok(b) => b,
+        Err(e) => {
+            debug!("Failed to apply histogram buckets: {} (using defaults)", e);
+            PrometheusBuilder::new()
+        }
+    };
+    if let Err(e) = builder.install() {
+        // In hot-reload scenario exporter may already be installed; ignore
+        debug!("Prometheus exporter install skipped: {}", e);
+    }
 
     // Register custom metrics
     register_metrics();
@@ -371,6 +440,7 @@ async fn handle_health(req: Request<Body>) -> Result<Response<Body>, Infallible>
                 .body(Body::from(metrics.to_string()))
                 .unwrap())
         }
+        // No cluster endpoints when clustering is disabled/removed
         _ => Ok(Response::builder()
             .status(StatusCode::NOT_FOUND)
             .body(Body::from(

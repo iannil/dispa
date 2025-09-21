@@ -31,7 +31,7 @@ metrics = "0.22"
 metrics-exporter-prometheus = "0.12"
 
 # HTTP client for forwarding
-reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }
+# reqwest removed; forwarding uses hyper + hyper-rustls with pooled client
 
 # Utilities
 uuid = { version = "1.6", features = ["v4", "serde"] }
@@ -50,6 +50,17 @@ notify = "6.1"
 regex = "1.11.2"
 url = "2.5.7"
 
+# Optional WASM runtime
+wasmtime = { version = "18", optional = true }
+wasmtime-wasi = { version = "18", optional = true }
+
 [dev-dependencies]
 wiremock = "0.6"
 tempfile = "3.8"
+
+[features]
+default = []
+# Enable external command plugin support (off by default for safety)
+cmd-plugin = []
+# Enable WASM plugin support (PoC, off by default)
+wasm-plugin = ["wasmtime", "wasmtime-wasi"]

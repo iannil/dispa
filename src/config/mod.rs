@@ -22,6 +22,10 @@ pub struct Config {
     pub tls: Option<TlsConfig>,
     pub routing: Option<RoutingConfig>,
     pub cache: Option<CacheConfig>,
+    /// Upstream HTTP client pool configuration
+    pub http_client: Option<HttpClientConfig>,
+    /// Plugins configuration
+    pub plugins: Option<PluginsConfig>,
 }
 
 /// Cache configuration
@@ -307,7 +311,187 @@ pub struct MonitoringConfig {
     pub enabled: bool,
     pub metrics_port: u16,
     pub health_check_port: u16,
+    /// Optional per-metric histogram bucket configuration (milliseconds)
+    #[serde(default)]
+    pub histogram_buckets: Option<Vec<HistogramBucketsConfig>>,
 }
+
+/// Histogram bucket configuration for a specific metric (values in milliseconds)
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct HistogramBucketsConfig {
+    /// Full metric name to apply buckets to
+    pub metric: String,
+    /// Bucket upper bounds (ms) in ascending order
+    pub buckets_ms: Vec<f64>,
+}
+
+impl MonitoringConfig {
+    pub fn validate(&self) -> Result<()> {
+        if let Some(list) = &self.histogram_buckets {
+            for item in list {
+                if item.metric.trim().is_empty() {
+                    return Err(anyhow::anyhow!(
+                        "monitoring.histogram_buckets.metric cannot be empty"
+                    ));
+                }
+                if item.buckets_ms.is_empty() {
+                    return Err(anyhow::anyhow!(
+                        "monitoring.histogram_buckets.buckets_ms cannot be empty for metric {}",
+                        item.metric
+                    ));
+                }
+                // Must be ascending and positive
+                let mut prev = 0.0f64;
+                for (i, &val) in item.buckets_ms.iter().enumerate() {
+                    if val <= 0.0 {
+                        return Err(anyhow::anyhow!(
+                            "Bucket values must be positive for metric {}",
+                            item.metric
+                        ));
+                    }
+                    if i > 0 && val < prev {
+                        return Err(anyhow::anyhow!(
+                            "Buckets must be in ascending order for metric {}",
+                            item.metric
+                        ));
+                    }
+                    prev = val;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Upstream HTTP client (connection pool) configuration
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct HttpClientConfig {
+    /// Max idle connections per host maintained in the pool
+    pub pool_max_idle_per_host: Option<usize>,
+    /// Idle connection timeout in seconds
+    pub pool_idle_timeout_secs: Option<u64>,
+    /// Request timeout (connect + response) in seconds for simple GETs/health checks
+    pub connect_timeout_secs: Option<u64>,
+}
+
+impl Default for HttpClientConfig {
+    fn default() -> Self {
+        Self {
+            pool_max_idle_per_host: Some(32),
+            pool_idle_timeout_secs: Some(90),
+            connect_timeout_secs: Some(5),
+        }
+    }
+}
+
+impl HttpClientConfig {
+    pub fn validate(&self) -> Result<()> {
+        if let Some(v) = self.pool_max_idle_per_host {
+            if v == 0 {
+                return Err(anyhow::anyhow!(
+                    "http_client.pool_max_idle_per_host must be > 0"
+                ));
+            }
+        }
+        if let Some(s) = self.pool_idle_timeout_secs {
+            if s == 0 {
+                return Err(anyhow::anyhow!(
+                    "http_client.pool_idle_timeout_secs must be > 0"
+                ));
+            }
+        }
+        if let Some(s) = self.connect_timeout_secs {
+            if s == 0 {
+                return Err(anyhow::anyhow!(
+                    "http_client.connect_timeout_secs must be > 0"
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Plugins configuration root
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PluginsConfig {
+    pub enabled: bool,
+    /// Whether to apply request plugins before domain interception check
+    /// Default: true (keeps existing behavior). If set to false, request-stage
+    /// plugins will be applied after domain check passes, which avoids running
+    /// plugins for non-intercepted domains.
+    #[serde(default = "default_apply_before_domain_match")]
+    pub apply_before_domain_match: bool,
+    pub plugins: Vec<PluginConfig>,
+}
+
+impl PluginsConfig {
+    pub fn validate(&self) -> Result<()> {
+        if !self.enabled { return Ok(()) }
+        for p in &self.plugins {
+            p.validate()?;
+        }
+        Ok(())
+    }
+}
+
+fn default_apply_before_domain_match() -> bool { true }
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PluginConfig {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub plugin_type: PluginType,
+    pub enabled: bool,
+    #[serde(default = "default_plugin_stage")]
+    pub stage: PluginStage,
+    /// Arbitrary JSON config for the plugin
+    pub config: Option<serde_json::Value>,
+    /// Strategy on plugin error
+    #[serde(default = "default_plugin_error_strategy")]
+    pub error_strategy: PluginErrorStrategy,
+}
+
+fn default_plugin_stage() -> PluginStage { PluginStage::Both }
+fn default_plugin_error_strategy() -> PluginErrorStrategy { PluginErrorStrategy::Continue }
+
+impl PluginConfig {
+    pub fn validate(&self) -> Result<()> {
+        if self.name.trim().is_empty() {
+            return Err(anyhow::anyhow!("Plugin name cannot be empty"));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PluginType {
+    HeaderInjector,
+    Blocklist,
+    HeaderOverride,
+    PathRewrite,
+    HostRewrite,
+    Command,
+    RateLimiter,
+    Wasm,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum PluginStage {
+    Request,
+    Response,
+    Both,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum PluginErrorStrategy {
+    Continue,
+    Fail,
+}
+
+// Cluster configuration removed
 
 impl Config {
     pub async fn from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
@@ -370,6 +554,34 @@ impl Config {
                 debug!("Override health_check_port from env: {}", port);
             } else {
                 warn!("Invalid DISPA_HEALTH_CHECK_PORT: {}", health_port);
+            }
+        }
+
+        // HTTP client pool overrides
+        if let Some(ref mut httpc) = self.http_client {
+            if let Ok(v) = env::var("DISPA_HTTP_POOL_MAX_IDLE_PER_HOST") {
+                if let Ok(n) = v.parse::<usize>() {
+                    httpc.pool_max_idle_per_host = Some(n);
+                    debug!("Override http_client.pool_max_idle_per_host from env: {}", n);
+                } else {
+                    warn!("Invalid DISPA_HTTP_POOL_MAX_IDLE_PER_HOST: {}", v);
+                }
+            }
+            if let Ok(v) = env::var("DISPA_HTTP_POOL_IDLE_TIMEOUT_SECS") {
+                if let Ok(n) = v.parse::<u64>() {
+                    httpc.pool_idle_timeout_secs = Some(n);
+                    debug!("Override http_client.pool_idle_timeout_secs from env: {}", n);
+                } else {
+                    warn!("Invalid DISPA_HTTP_POOL_IDLE_TIMEOUT_SECS: {}", v);
+                }
+            }
+            if let Ok(v) = env::var("DISPA_HTTP_CONNECT_TIMEOUT_SECS") {
+                if let Ok(n) = v.parse::<u64>() {
+                    httpc.connect_timeout_secs = Some(n);
+                    debug!("Override http_client.connect_timeout_secs from env: {}", n);
+                } else {
+                    warn!("Invalid DISPA_HTTP_CONNECT_TIMEOUT_SECS: {}", v);
+                }
             }
         }
 
@@ -542,6 +754,21 @@ impl Config {
             cache_config.validate()?;
         }
 
+        // Validate monitoring configuration
+        self.monitoring.validate()?;
+
+        // Validate HTTP client configuration if present
+        if let Some(http_client) = &self.http_client {
+            http_client.validate()?;
+        }
+
+        // Validate plugins configuration if present
+        if let Some(plugins) = &self.plugins {
+            plugins.validate()?;
+        }
+
+        // Cluster validation removed
+
         Ok(())
     }
 
@@ -612,10 +839,13 @@ impl Config {
                 enabled: true,
                 metrics_port: 9090,
                 health_check_port: 8081,
+                histogram_buckets: None,
             },
             tls: None,
             routing: None,
             cache: None,
+            http_client: Some(HttpClientConfig::default()),
+            plugins: None,
         }
     }
 }
@@ -634,6 +864,7 @@ pub struct ConfigManager {
     config: Arc<RwLock<Config>>,
     config_path: PathBuf,
     _watcher: Option<RecommendedWatcher>,
+    reload_hook: Option<Arc<dyn Fn(&Config) + Send + Sync>>, // optional callback on reload
 }
 
 impl ConfigManager {
@@ -647,6 +878,7 @@ impl ConfigManager {
             config: Arc::new(RwLock::new(config)),
             config_path,
             _watcher: None,
+            reload_hook: None,
         })
     }
 
@@ -662,12 +894,22 @@ impl ConfigManager {
         Arc::clone(&self.config)
     }
 
+    /// Set a callback to be invoked after config reload succeeds
+    #[allow(dead_code)]
+    pub fn set_reload_hook<F>(&mut self, hook: F)
+    where
+        F: Fn(&Config) + Send + Sync + 'static,
+    {
+        self.reload_hook = Some(Arc::new(hook));
+    }
+
     /// Start watching for configuration file changes
     #[allow(dead_code)]
     pub async fn start_hot_reload(&mut self) -> Result<()> {
         let (tx, mut rx) = mpsc::channel(100);
         let config_arc = Arc::clone(&self.config);
         let config_path = self.config_path.clone();
+        let reload_hook = self.reload_hook.clone();
 
         // Create file watcher
         let mut watcher = RecommendedWatcher::new(
@@ -692,9 +934,16 @@ impl ConfigManager {
 
         // Spawn task to handle file change events
         let config_path_clone = config_path.clone();
+        let reload_hook_clone = reload_hook.clone();
         tokio::spawn(async move {
             while let Some(event) = rx.recv().await {
-                if let Err(e) = handle_config_change(&event, &config_arc, &config_path_clone).await
+                if let Err(e) = handle_config_change(
+                    &event,
+                    &config_arc,
+                    &config_path_clone,
+                    reload_hook_clone.clone(),
+                )
+                .await
                 {
                     error!("Failed to handle config change: {}", e);
                 }
@@ -733,6 +982,7 @@ async fn handle_config_change(
     event: &Event,
     config: &Arc<RwLock<Config>>,
     config_path: &Path,
+    reload_hook: Option<Arc<dyn Fn(&Config) + Send + Sync>>,
 ) -> Result<()> {
     use notify::EventKind;
 
@@ -762,6 +1012,13 @@ async fn handle_config_change(
             let mut current_config = config.write().unwrap();
             *current_config = new_config;
             info!("Configuration hot-reloaded successfully");
+
+            // Invoke reload hook if present (best-effort)
+            if let Some(hook) = reload_hook {
+                let cfg_snapshot = current_config.clone();
+                drop(current_config); // release lock before running hook
+                (hook)(&cfg_snapshot);
+            }
         }
         Err(e) => {
             warn!(

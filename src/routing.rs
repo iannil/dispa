@@ -116,6 +116,18 @@ pub struct RoutingRule {
     pub conditions: RoutingConditions,
     /// Actions to take when rule matches
     pub actions: RoutingActions,
+    /// Optional request-stage plugins to apply for this rule (by plugin name, in order)
+    #[serde(default)]
+    pub plugins_request: Option<Vec<String>>,
+    /// Optional response-stage plugins to apply for this rule (by plugin name, in order)
+    #[serde(default)]
+    pub plugins_response: Option<Vec<String>>,
+    /// Optional ordering policy for plugin lists
+    #[serde(default)]
+    pub plugins_order: Option<PluginOrder>,
+    /// Deduplicate plugin names in lists (default: false)
+    #[serde(default)]
+    pub plugins_dedup: Option<bool>,
     /// Target backend for this rule
     pub target: String,
     /// Whether this rule is enabled
@@ -332,6 +344,20 @@ pub struct RoutingDecision {
     pub response_actions: Option<RoutingActions>,
     /// Custom response (if applicable)
     pub custom_response: Option<CustomResponse>,
+    /// Route-specific plugins to apply (subset by name)
+    pub plugins_request: Option<Vec<String>>,
+    pub plugins_response: Option<Vec<String>>,
+    pub plugins_order: Option<PluginOrder>,
+    pub plugins_dedup: Option<bool>,
+}
+
+/// Plugin ordering options
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PluginOrder {
+    AsListed,
+    NameAsc,
+    NameDesc,
 }
 
 /// Advanced routing engine
@@ -449,6 +475,10 @@ impl RoutingEngine {
                     request_actions: Some(compiled_rule.rule.actions.clone()),
                     response_actions: Some(compiled_rule.rule.actions.clone()),
                     custom_response: compiled_rule.rule.actions.custom_response.clone(),
+                    plugins_request: compiled_rule.rule.plugins_request.clone(),
+                    plugins_response: compiled_rule.rule.plugins_response.clone(),
+                    plugins_order: compiled_rule.rule.plugins_order.clone(),
+                    plugins_dedup: compiled_rule.rule.plugins_dedup,
                 };
             }
         }
@@ -470,7 +500,30 @@ impl RoutingEngine {
             request_actions: None,
             response_actions: None,
             custom_response: None,
+            plugins_request: None,
+            plugins_response: None,
+            plugins_order: None,
+            plugins_dedup: None,
         }
+    }
+
+    /// Prepare plugin list with optional ordering and deduplication
+    pub fn prepare_plugin_names(
+        names: &[String],
+        order: &Option<PluginOrder>,
+        dedup: &Option<bool>,
+    ) -> Vec<String> {
+        let mut v: Vec<String> = names.to_vec();
+        match order {
+            Some(PluginOrder::NameAsc) => v.sort(),
+            Some(PluginOrder::NameDesc) => v.sort_by(|a, b| b.cmp(a)),
+            _ => {}
+        }
+        if dedup.copied().unwrap_or(false) {
+            let mut seen = std::collections::HashSet::new();
+            v.retain(|n| seen.insert(n.clone()));
+        }
+        v
     }
 
     /// Evaluate if a rule matches the request
@@ -1087,6 +1140,23 @@ mod tests {
         let decision = engine.route_request(&req).await;
         assert_eq!(decision.target, "api-backend");
         assert_eq!(decision.rule_name, Some("api-route".to_string()));
+    }
+
+    #[test]
+    fn test_prepare_plugin_names_order_and_dedup() {
+        let names = vec!["b".to_string(), "a".to_string(), "b".to_string()];
+        // As listed, no dedup
+        let out = RoutingEngine::prepare_plugin_names(&names, &Some(PluginOrder::AsListed), &Some(false));
+        assert_eq!(out, vec!["b", "a", "b"]);
+        // Asc, dedup
+        let out = RoutingEngine::prepare_plugin_names(&names, &Some(PluginOrder::NameAsc), &Some(true));
+        assert_eq!(out, vec!["a", "b"]);
+        // Desc, dedup
+        let out = RoutingEngine::prepare_plugin_names(&names, &Some(PluginOrder::NameDesc), &Some(true));
+        assert_eq!(out, vec!["b", "a"]);
+        // Default (no order, no dedup)
+        let out = RoutingEngine::prepare_plugin_names(&names, &None, &None);
+        assert_eq!(out, names);
     }
 
     #[tokio::test]

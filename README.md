@@ -53,7 +53,146 @@ type = "weighted"
 [targets.health_check]
 enabled = true
 interval = 30
+
+# 可选：上游 HTTP 客户端连接池（性能优化）
+[http_client]
+# 每个主机的最大空闲连接数（默认 32）
+pool_max_idle_per_host = 32
+# 空闲连接回收超时秒数（默认 90）
+pool_idle_timeout_secs = 90
+# 健康检查等简单 GET 的请求超时（秒，默认 5）
+connect_timeout_secs = 5
+
+# 也可通过环境变量覆盖：
+# DISPA_HTTP_POOL_MAX_IDLE_PER_HOST, DISPA_HTTP_POOL_IDLE_TIMEOUT_SECS, DISPA_HTTP_CONNECT_TIMEOUT_SECS
 ```
+
+#### 自定义 Prometheus 直方图桶（buckets）
+
+可为关键直方图指标配置自定义 buckets（单位统一为毫秒，`*_seconds` 指标会自动换算为秒）。
+
+```toml
+[monitoring]
+enabled = true
+metrics_port = 9090
+health_check_port = 8081
+
+# 直方图桶（按指标名精确匹配）
+[[monitoring.histogram_buckets]]
+metric = "dispa_log_write_duration_ms"           # 日志写入耗时（ms）
+buckets_ms = [0.5, 1, 2, 5, 10, 20, 50, 100, 200]
+
+[[monitoring.histogram_buckets]]
+metric = "dispa_target_health_check_duration_ms" # 健康检查耗时（ms）
+buckets_ms = [5, 10, 25, 50, 100, 250, 500, 1000]
+
+[[monitoring.histogram_buckets]]
+metric = "dispa_request_duration_seconds"        # 请求耗时（秒）
+# 这里单位仍写毫秒，系统会自动除以 1000 以适配 *_seconds
+buckets_ms = [1, 2.5, 5, 10, 25, 50, 100, 250, 500, 1000]
+```
+
+内置默认 buckets：
+
+- `dispa_log_write_duration_ms`：`[0.25, 0.5, 1, 2.5, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000]`
+- `dispa_target_health_check_duration_ms`：`[1, 2.5, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000]`
+- `dispa_request_duration_seconds`：`[0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10]`
+
+#### 插件系统（实验特性）
+
+配置示例：
+
+```toml
+[plugins]
+enabled = true
+# 控制请求阶段插件的执行时机：
+# true = 在域名拦截检查之前执行（默认，兼容现有行为）
+# false = 在域名拦截检查通过后再执行（避免非拦截域名上的开销）
+apply_before_domain_match = true
+
+[[plugins.plugins]]
+name = "inject"
+type = "headerinjector"
+enabled = true
+stage = "both"
+error_strategy = "continue"   # continue | fail（插件内部错误时，是否短路为 500）
+config = { request_headers = { "x-request-id" = "generated" }, response_headers = { "x-power" = "dispa" } }
+
+[[plugins.plugins]]
+name = "block"
+type = "blocklist"
+enabled = true
+stage = "request"
+error_strategy = "continue"
+config = { hosts = ["internal.example.com"], paths = ["/admin", "/private"] }
+
+[[plugins.plugins]]
+name = "rewrite-path"
+type = "pathrewrite"
+enabled = true
+stage = "request"
+error_strategy = "continue"
+config = { from_prefix = "/old", to_prefix = "/new" }
+
+[[plugins.plugins]]
+name = "limit-global"
+type = "ratelimiter"
+enabled = true
+stage = "request"
+error_strategy = "continue"
+config = { rate_per_sec = 100.0, burst = 200.0 }
+
+# 外部命令插件（可选构建特性：`cmd-plugin`；同步执行，适合低 QPS）
+# 构建开启示例：`cargo build --features cmd-plugin`
+[[plugins.plugins]]
+name = "cmd"
+type = "command"
+enabled = true
+stage = "request"
+error_strategy = "continue"
+config = { 
+  exec = "/usr/local/bin/myplugin",            # 必填：可执行文件路径（建议搭配 allowlist）
+  args = ["--opt"],                             # 可选：参数
+  timeout_ms = 200,                              # 可选：超时（默认 100ms）
+  max_concurrency = 8,                           # 可选：最大并发（默认不限）
+  exec_allowlist = ["/usr/local/bin/myplugin"], # 可选：允许的可执行文件白名单
+  cwd = "/var/run",                             # 可选：工作目录
+  env = { RUST_LOG = "info" }                   # 可选：环境变量（注意：目前 spawn 前设置环境更安全）
+}
+
+# WASM 插件（PoC，需启用 `wasm-plugin` 特性，并提供符合约定的导出函数）
+# 构建开启示例：`cargo build --features wasm-plugin`
+[[plugins.plugins]]
+name = "wasm-filter"
+type = "wasm"
+enabled = true
+stage = "request"
+error_strategy = "continue"
+config = { module_path = "./plugins/filter.wasm", timeout_ms = 200, max_concurrency = 16 }
+```
+
+外部命令插件协议：
+- 输入（stdin）：JSON，如 `{ "stage": "request", "method": "GET", "path": "/api", "headers": {"host": "..."} }`
+- 输出（stdout）：JSON，如 `{ "set_headers": {"x-added": "1"} }` 或 `{ "short_circuit": {"status": 403, "body": "blocked"} }`
+
+WASM 插件约定（PoC）：
+- 导出函数：`alloc(i32)->i32`, `dealloc(i32,i32)`, `dispa_on_request(i32,i32)->i32`, `dispa_on_response(i32,i32)->i32`, `dispa_get_result_len()->i32`
+- 内存交换：传入 JSON 字符串，返回 JSON 字符串；JSON 含义与命令插件一致
+
+插件指标：
+- `dispa_plugin_invocations_total{plugin,stage}`、`dispa_plugin_short_circuits_total{plugin,stage}`、`dispa_plugin_duration_ms{plugin,stage}`
+- `dispa_plugin_errors_total{plugin,stage,kind}`（panic/exec/io/timeout 等）
+
+每路由（per-route）插件链（与 routing 集成）
+- 在路由规则中添加：
+  - `plugins_request = ["plugin-a", "plugin-b"]`
+  - `plugins_response = ["plugin-c"]`
+- 行为与全局插件链一致，按数组顺序执行；响应阶段在全局插件之前执行
+- 示例：`config/routing-plugins-example.toml`（包含 `routing` 与 `plugins`）
+
+错误策略说明：
+- `continue`：插件内部错误（panic/命令执行失败/超时）被记录并忽略，继续下游处理
+- `fail`：遇到错误立即短路返回 500（请求阶段）或将响应改为 500（响应阶段）
 
 ### 运行
 

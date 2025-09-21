@@ -5,13 +5,15 @@ use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
 use std::net::SocketAddr;
 use std::path::Path;
-use std::time::Duration as StdDuration;
+use std::time::{Duration as StdDuration, Instant};
 use tokio::fs::OpenOptions;
+use tokio::task::JoinHandle;
 use tokio::io::AsyncWriteExt;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use crate::config::{LoggingConfig, LoggingType};
+use std::sync::{Arc, RwLock};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrafficLog {
@@ -32,29 +34,41 @@ pub struct TrafficLog {
 
 #[derive(Clone)]
 pub struct TrafficLogger {
-    config: LoggingConfig,
-    db_pool: Option<SqlitePool>,
+    // Shared so that clones observe hot-reloaded config
+    config: Arc<RwLock<LoggingConfig>>,
+    // Shared so that clones share the same connection pool
+    db_pool: Arc<RwLock<Option<SqlitePool>>>,
+    // Background cleanup task handle (daily retention cleanup)
+    cleanup_handle: Arc<RwLock<Option<JoinHandle<()>>>>,
 }
 
 impl TrafficLogger {
     pub fn new(config: LoggingConfig) -> Self {
         Self {
-            config,
-            db_pool: None,
+            config: Arc::new(RwLock::new(config)),
+            db_pool: Arc::new(RwLock::new(None)),
+            cleanup_handle: Arc::new(RwLock::new(None)),
         }
     }
 
     pub async fn initialize(&mut self) -> Result<()> {
-        if !self.config.enabled {
+        self.initialize_shared().await
+    }
+
+    /// Initialize resources based on current config (idempotent)
+    pub async fn initialize_shared(&self) -> Result<()> {
+        let cfg = self.config.read().unwrap().clone();
+        if !cfg.enabled {
             info!("Traffic logging is disabled");
             return Ok(());
         }
 
-        match self.config.log_type {
+        match cfg.log_type {
             LoggingType::Database | LoggingType::Both => {
-                if let Some(ref db_config) = self.config.database {
+                if let Some(ref db_config) = cfg.database {
                     info!("Initializing database logging to: {}", db_config.url);
-                    self.db_pool = Some(self.setup_database(&db_config.url).await?);
+                    let pool = self.setup_database(&db_config.url).await?;
+                    *self.db_pool.write().unwrap() = Some(pool);
                     info!("Database logging initialized successfully");
                 }
             }
@@ -62,28 +76,22 @@ impl TrafficLogger {
         }
 
         // Create log directory if using file logging
-        if matches!(self.config.log_type, LoggingType::File | LoggingType::Both) {
-            if let Some(ref file_config) = self.config.file {
+        if matches!(cfg.log_type, LoggingType::File | LoggingType::Both) {
+            if let Some(ref file_config) = cfg.file {
                 tokio::fs::create_dir_all(&file_config.directory).await?;
                 info!("File logging directory created: {}", file_config.directory);
             }
         }
 
-        // Start cleanup task if retention is configured
-        if let Some(retention_days) = self.config.retention_days {
-            if retention_days > 0 {
-                let logger = self.clone();
-                tokio::spawn(async move {
-                    let mut interval = tokio::time::interval(StdDuration::from_secs(24 * 60 * 60)); // Daily
-
-                    loop {
-                        interval.tick().await;
-                        if let Err(e) = logger.cleanup_old_logs().await {
-                            error!("Failed to cleanup old logs: {}", e);
-                        }
-                    }
-                });
+        // Start or restart cleanup task based on retention
+        if let Some(days) = cfg.retention_days {
+            if days > 0 {
+                self.restart_cleanup_task(days).await;
+            } else {
+                self.stop_cleanup_task().await;
             }
+        } else {
+            self.stop_cleanup_task().await;
         }
 
         Ok(())
@@ -172,7 +180,7 @@ impl TrafficLogger {
         user_agent: Option<&str>,
         error_message: Option<&str>,
     ) -> Result<()> {
-        if !self.config.enabled {
+        if !self.config.read().unwrap().enabled {
             return Ok(());
         }
 
@@ -192,26 +200,64 @@ impl TrafficLogger {
             error_message: error_message.map(|s| s.to_string()),
         };
 
-        match self.config.log_type {
+        let cfg = self.config.read().unwrap().clone();
+        match cfg.log_type {
             LoggingType::Database => {
-                if let Err(e) = self.log_to_database(&log_entry).await {
-                    error!("Failed to log to database: {}", e);
+                let labels = [("type", "database")];
+                let start = Instant::now();
+                let res = self.log_to_database(&log_entry).await;
+                let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
+                metrics::histogram!("dispa_log_write_duration_ms", &labels).record(elapsed_ms);
+                match res {
+                    Ok(_) => metrics::counter!("dispa_log_writes_total", &labels).increment(1),
+                    Err(e) => {
+                        metrics::counter!("dispa_log_write_errors_total", &labels).increment(1);
+                        error!("Failed to log to database: {}", e);
+                    }
                 }
             }
             LoggingType::File => {
-                if let Err(e) = self.log_to_file(&log_entry).await {
-                    error!("Failed to log to file: {}", e);
+                let labels = [("type", "file")];
+                let start = Instant::now();
+                let res = self.log_to_file(&log_entry).await;
+                let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
+                metrics::histogram!("dispa_log_write_duration_ms", &labels).record(elapsed_ms);
+                match res {
+                    Ok(_) => metrics::counter!("dispa_log_writes_total", &labels).increment(1),
+                    Err(e) => {
+                        metrics::counter!("dispa_log_write_errors_total", &labels).increment(1);
+                        error!("Failed to log to file: {}", e);
+                    }
                 }
             }
             LoggingType::Both => {
-                let db_result = self.log_to_database(&log_entry).await;
-                let file_result = self.log_to_file(&log_entry).await;
+                let db_labels = [("type", "database")];
+                let file_labels = [("type", "file")];
 
-                if let Err(e) = db_result {
-                    warn!("Failed to log to database: {}", e);
+                // DB write timing
+                let db_start = Instant::now();
+                let db_res = self.log_to_database(&log_entry).await;
+                let db_elapsed = db_start.elapsed().as_secs_f64() * 1000.0;
+                metrics::histogram!("dispa_log_write_duration_ms", &db_labels).record(db_elapsed);
+                match db_res {
+                    Ok(_) => metrics::counter!("dispa_log_writes_total", &db_labels).increment(1),
+                    Err(e) => {
+                        metrics::counter!("dispa_log_write_errors_total", &db_labels).increment(1);
+                        warn!("Failed to log to database: {}", e);
+                    }
                 }
-                if let Err(e) = file_result {
-                    warn!("Failed to log to file: {}", e);
+
+                // File write timing
+                let file_start = Instant::now();
+                let file_res = self.log_to_file(&log_entry).await;
+                let file_elapsed = file_start.elapsed().as_secs_f64() * 1000.0;
+                metrics::histogram!("dispa_log_write_duration_ms", &file_labels).record(file_elapsed);
+                match file_res {
+                    Ok(_) => metrics::counter!("dispa_log_writes_total", &file_labels).increment(1),
+                    Err(e) => {
+                        metrics::counter!("dispa_log_write_errors_total", &file_labels).increment(1);
+                        warn!("Failed to log to file: {}", e);
+                    }
                 }
             }
         }
@@ -228,7 +274,8 @@ impl TrafficLogger {
     }
 
     async fn log_to_database(&self, log_entry: &TrafficLog) -> Result<()> {
-        if let Some(ref pool) = self.db_pool {
+        let pool_opt = { self.db_pool.read().unwrap().clone() };
+        if let Some(ref pool) = pool_opt {
             sqlx::query(
                 r#"
                 INSERT INTO traffic_logs
@@ -260,7 +307,8 @@ impl TrafficLogger {
     }
 
     async fn update_daily_summary(&self, log_entry: &TrafficLog) -> Result<()> {
-        if let Some(ref pool) = self.db_pool {
+        let pool_opt = { self.db_pool.read().unwrap().clone() };
+        if let Some(ref pool) = pool_opt {
             let date = log_entry.timestamp.format("%Y-%m-%d").to_string();
             let is_error = log_entry.status_code >= 400;
 
@@ -287,7 +335,8 @@ impl TrafficLogger {
     }
 
     async fn log_to_file(&self, log_entry: &TrafficLog) -> Result<()> {
-        if let Some(ref file_config) = self.config.file {
+        let file_opt = { self.config.read().unwrap().file.clone() };
+        if let Some(file_config) = file_opt {
             let log_line = serde_json::to_string(log_entry)?;
             let file_path = format!(
                 "{}/traffic-{}.log",
@@ -323,11 +372,12 @@ impl TrafficLogger {
     }
 
     pub async fn cleanup_old_logs(&self) -> Result<()> {
-        if !self.config.enabled {
+        if !self.config.read().unwrap().enabled {
             return Ok(());
         }
 
-        if let Some(retention_days) = self.config.retention_days {
+        let retention = { self.config.read().unwrap().retention_days };
+        if let Some(retention_days) = retention {
             let cutoff_date = Utc::now() - Duration::days(retention_days as i64);
             info!(
                 "Cleaning up logs older than {}",
@@ -335,7 +385,8 @@ impl TrafficLogger {
             );
 
             // Clean database logs
-            if let Some(ref pool) = self.db_pool {
+            let pool_opt = { self.db_pool.read().unwrap().clone() };
+            if let Some(ref pool) = pool_opt {
                 let result = sqlx::query("DELETE FROM traffic_logs WHERE timestamp < ?")
                     .bind(cutoff_date)
                     .execute(pool)
@@ -351,10 +402,15 @@ impl TrafficLogger {
                     result.rows_affected(),
                     summary_result.rows_affected()
                 );
+                metrics::counter!("dispa_log_cleanup_db_deleted_rows_total")
+                    .increment(result.rows_affected());
+                metrics::counter!("dispa_log_cleanup_db_deleted_summary_total")
+                    .increment(summary_result.rows_affected());
             }
 
             // Clean file logs
-            if let Some(ref file_config) = self.config.file {
+            let file_opt = { self.config.read().unwrap().file.clone() };
+            if let Some(file_config) = file_opt {
                 let mut cleanup_count = 0;
                 if let Ok(mut dir) = tokio::fs::read_dir(&file_config.directory).await {
                     while let Ok(Some(entry)) = dir.next_entry().await {
@@ -382,10 +438,13 @@ impl TrafficLogger {
                         }
                     }
                 }
+                metrics::counter!("dispa_log_cleanup_removed_files_total")
+                    .increment(cleanup_count as u64);
                 if cleanup_count > 0 {
                     info!("Removed {} old log files", cleanup_count);
                 }
             }
+            metrics::counter!("dispa_log_cleanup_runs_total").increment(1);
         }
 
         Ok(())
@@ -394,7 +453,8 @@ impl TrafficLogger {
     pub async fn get_traffic_stats(&self, hours: i64) -> Result<TrafficStats> {
         let since = Utc::now() - Duration::hours(hours);
 
-        if let Some(ref pool) = self.db_pool {
+        let pool_opt = { self.db_pool.read().unwrap().clone() };
+        if let Some(ref pool) = pool_opt {
             let row = sqlx::query(
                 r#"
                 SELECT
@@ -427,7 +487,8 @@ impl TrafficLogger {
     pub async fn get_traffic_by_target(&self, hours: i64) -> Result<Vec<TargetTrafficStats>> {
         let since = Utc::now() - Duration::hours(hours);
 
-        if let Some(ref pool) = self.db_pool {
+        let pool_opt = { self.db_pool.read().unwrap().clone() };
+        if let Some(ref pool) = pool_opt {
             let rows = sqlx::query(
                 r#"
                 SELECT
@@ -463,7 +524,8 @@ impl TrafficLogger {
 
     #[allow(dead_code)]
     pub async fn get_error_logs(&self, limit: i64) -> Result<Vec<TrafficLog>> {
-        if let Some(ref pool) = self.db_pool {
+        let pool_opt = { self.db_pool.read().unwrap().clone() };
+        if let Some(ref pool) = pool_opt {
             let rows = sqlx::query(
                 r#"
                 SELECT * FROM traffic_logs
@@ -499,6 +561,105 @@ impl TrafficLogger {
         } else {
             Ok(Vec::new())
         }
+    }
+
+    /// Apply new logging config at runtime; update database/file resources as needed
+    pub async fn reconfigure(&self, new_config: LoggingConfig) -> Result<()> {
+        let old = { self.config.read().unwrap().clone() };
+        // Replace config
+        {
+            let mut cfg = self.config.write().unwrap();
+            *cfg = new_config.clone();
+        }
+
+        // If disabled now, drop DB pool and return
+        if !new_config.enabled {
+            *self.db_pool.write().unwrap() = None;
+            info!("Traffic logging disabled via config reload");
+            self.stop_cleanup_task().await;
+            return Ok(());
+        }
+
+        // Ensure file directory if needed
+        if matches!(new_config.log_type, LoggingType::File | LoggingType::Both) {
+            if let Some(ref file_cfg) = new_config.file {
+                tokio::fs::create_dir_all(&file_cfg.directory).await?;
+            }
+        }
+
+        // Configure database pool according to new config
+        match new_config.log_type {
+            LoggingType::Database | LoggingType::Both => {
+                if let Some(db_cfg) = &new_config.database {
+                    let need_new_pool = match &old.database {
+                        Some(old_db) => old_db.url != db_cfg.url,
+                        None => true,
+                    } || self.db_pool.read().unwrap().is_none();
+
+                    if need_new_pool {
+                        match self.setup_database(&db_cfg.url).await {
+                            Ok(pool) => {
+                                *self.db_pool.write().unwrap() = Some(pool);
+                                info!("Traffic logger database pool reinitialized");
+                            }
+                            Err(e) => {
+                                *self.db_pool.write().unwrap() = None;
+                                warn!("Failed to reinitialize database pool: {}", e);
+                            }
+                        }
+                    }
+                } else {
+                    // No database config provided; drop pool
+                    *self.db_pool.write().unwrap() = None;
+                }
+            }
+            LoggingType::File => {
+                // Drop database pool if previously used
+                *self.db_pool.write().unwrap() = None;
+            }
+        }
+
+        // Restart/stop cleanup task according to new retention setting
+        if let Some(days) = new_config.retention_days {
+            if days > 0 {
+                self.restart_cleanup_task(days).await;
+            } else {
+                self.stop_cleanup_task().await;
+            }
+        } else {
+            self.stop_cleanup_task().await;
+        }
+
+        Ok(())
+    }
+
+    /// Stop existing cleanup task (if any)
+    async fn stop_cleanup_task(&self) {
+        if let Some(handle) = self.cleanup_handle.write().unwrap().take() {
+            handle.abort();
+        }
+    }
+
+    /// Start or restart the daily cleanup task with the given retention days
+    async fn restart_cleanup_task(&self, retention_days: u32) {
+        // Stop any existing task first
+        self.stop_cleanup_task().await;
+
+        let logger = self.clone();
+        let handle = tokio::spawn(async move {
+            let mut interval = tokio::time::interval(StdDuration::from_secs(24 * 60 * 60));
+            loop {
+                interval.tick().await;
+                // retention_days is captured but cleanup_old_logs reads current config
+                if let Err(e) = logger.cleanup_old_logs().await {
+                    error!("Failed to cleanup old logs: {}", e);
+                    metrics::counter!("dispa_log_cleanup_errors_total").increment(1);
+                }
+            }
+        });
+
+        *self.cleanup_handle.write().unwrap() = Some(handle);
+        info!("Started traffic log cleanup task (retention_days = {})", retention_days);
     }
 }
 
@@ -611,8 +772,8 @@ mod tests {
         let config = create_disabled_logging_config();
         let logger = TrafficLogger::new(config.clone());
 
-        assert_eq!(logger.config.enabled, config.enabled);
-        assert!(logger.db_pool.is_none());
+        assert_eq!(logger.config.read().unwrap().enabled, config.enabled);
+        assert!(logger.db_pool.read().unwrap().is_none());
     }
 
     #[tokio::test]
@@ -622,7 +783,7 @@ mod tests {
 
         let result = logger.initialize().await;
         assert!(result.is_ok());
-        assert!(logger.db_pool.is_none());
+        assert!(logger.db_pool.read().unwrap().is_none());
     }
 
     #[tokio::test]
@@ -632,7 +793,7 @@ mod tests {
 
         let result = logger.initialize().await;
         assert!(result.is_ok());
-        assert!(logger.db_pool.is_none());
+        assert!(logger.db_pool.read().unwrap().is_none());
 
         // Verify log directory was created
         assert!(_temp_dir.path().exists());
@@ -655,7 +816,7 @@ mod tests {
             "Database initialization failed: {:?}",
             result.unwrap_err()
         );
-        assert!(logger.db_pool.is_some());
+        assert!(logger.db_pool.read().unwrap().is_some());
     }
 
     #[tokio::test]
@@ -665,7 +826,7 @@ mod tests {
 
         let result = logger.initialize().await;
         assert!(result.is_ok());
-        assert!(logger.db_pool.is_some());
+        assert!(logger.db_pool.read().unwrap().is_some());
 
         // Verify log directory was created
         let logs_dir = _temp_dir.path().join("logs");
@@ -763,7 +924,7 @@ mod tests {
         assert!(result.is_ok());
 
         // Verify data was written to database
-        if let Some(ref pool) = logger.db_pool {
+        if let Some(ref pool) = *logger.db_pool.read().unwrap() {
             let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM traffic_logs WHERE id = ?")
                 .bind(request_id.to_string())
                 .fetch_one(pool)

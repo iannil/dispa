@@ -1,0 +1,64 @@
+[plugins]
+enabled = true
+# 在域名拦截检查前执行请求插件（可选：false 则在检查通过后执行）
+apply_before_domain_match = true
+
+[[plugins.plugins]]
+name = "inject"
+type = "headerinjector"
+enabled = true
+stage = "both"
+error_strategy = "continue"
+config = { request_headers = { "x-request-id" = "generated" }, response_headers = { "x-power" = "dispa" } }
+
+[[plugins.plugins]]
+name = "block"
+type = "blocklist"
+enabled = true
+stage = "request"
+error_strategy = "continue"
+config = { hosts = ["internal.example.com"], paths = ["/admin", "/private"] }
+
+[[plugins.plugins]]
+name = "rewrite-path"
+type = "pathrewrite"
+enabled = true
+stage = "request"
+error_strategy = "continue"
+config = { from_prefix = "/old", to_prefix = "/new" }
+
+[[plugins.plugins]]
+name = "limit-global"
+type = "ratelimiter"
+enabled = true
+stage = "request"
+error_strategy = "continue"
+config = { rate_per_sec = 100.0, burst = 200.0 }
+
+# 需要启用 cmd-plugin 特性
+[[plugins.plugins]]
+name = "cmd-headers"
+type = "command"
+enabled = true
+stage = "request"
+error_strategy = "continue"
+config = { exec = "./examples/plugins/cmd_headers.sh", timeout_ms = 200, max_concurrency = 8, exec_allowlist = ["./examples/plugins/cmd_headers.sh"] }
+
+# 需要启用 cmd-plugin 特性
+[[plugins.plugins]]
+name = "cmd-block"
+type = "command"
+enabled = true
+stage = "request"
+error_strategy = "continue"
+config = { exec = "./examples/plugins/cmd_block.sh", timeout_ms = 200, max_concurrency = 4, exec_allowlist = ["./examples/plugins/cmd_block.sh"] }
+
+# 需要启用 wasm-plugin 特性
+[[plugins.plugins]]
+name = "wasm-filter"
+type = "wasm"
+enabled = true
+stage = "request"
+error_strategy = "continue"
+config = { module_path = "./examples/wasm/filter.wasm", timeout_ms = 200, max_concurrency = 16 }
+

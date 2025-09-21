@@ -409,6 +409,13 @@ impl LoadBalancer {
     }
 }
 
+impl Drop for LoadBalancer {
+    fn drop(&mut self) {
+        // Signal health checker to stop its background loop on drop
+        self.health_checker.stop();
+    }
+}
+
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct TargetInfo {

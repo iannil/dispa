@@ -6,24 +6,34 @@ use std::net::SocketAddr;
 use tracing::{error, info, warn};
 
 use super::handler::ProxyHandler;
+use super::http_client;
 use crate::balancer::LoadBalancer;
 use crate::config::Config;
 use crate::error::DispaResult;
 use crate::logger::TrafficLogger;
 use crate::routing::RoutingEngine;
 use crate::tls::TlsManager;
+use crate::plugins::{PluginEngine, SharedPluginEngine};
 
 pub struct ProxyServer {
     pub config: Config,
     pub bind_addr: SocketAddr,
-    load_balancer: LoadBalancer,
+    load_balancer: std::sync::Arc<tokio::sync::RwLock<LoadBalancer>>,
+    domain_config: std::sync::Arc<std::sync::RwLock<crate::config::DomainConfig>>,
     traffic_logger: TrafficLogger,
     tls_manager: Option<TlsManager>,
+    routing_engine: std::sync::Arc<tokio::sync::RwLock<Option<RoutingEngine>>>,
+    plugins: SharedPluginEngine,
 }
 
 impl ProxyServer {
     pub fn new(config: Config, bind_addr: SocketAddr, traffic_logger: TrafficLogger) -> Self {
-        let load_balancer = LoadBalancer::new(config.targets.clone());
+        let load_balancer = std::sync::Arc::new(tokio::sync::RwLock::new(LoadBalancer::new(
+            config.targets.clone(),
+        )));
+
+        // Initialize shared HTTP client pool with config (first call wins)
+        http_client::init(config.http_client.as_ref());
 
         // Initialize TLS manager if TLS is configured
         let tls_manager = if let Some(tls_config) = &config.tls {
@@ -36,12 +46,43 @@ impl ProxyServer {
             None
         };
 
+        // Initialize routing engine if configured
+        let routing_engine = if let Some(routing_config) = &config.routing {
+            match RoutingEngine::new(routing_config.clone()) {
+                Ok(engine) => std::sync::Arc::new(tokio::sync::RwLock::new(Some(engine))),
+                Err(e) => {
+                    warn!("Failed to initialize routing engine: {}", e);
+                    std::sync::Arc::new(tokio::sync::RwLock::new(None))
+                }
+            }
+        } else {
+            std::sync::Arc::new(tokio::sync::RwLock::new(None))
+        };
+
+        // Initialize plugin engine if configured
+        let plugins = if let Some(plugins_cfg) = &config.plugins {
+            match PluginEngine::new(plugins_cfg) {
+                Ok(engine) => std::sync::Arc::new(tokio::sync::RwLock::new(Some(engine))),
+                Err(e) => {
+                    warn!("Failed to initialize plugin engine: {}", e);
+                    std::sync::Arc::new(tokio::sync::RwLock::new(None))
+                }
+            }
+        } else {
+            std::sync::Arc::new(tokio::sync::RwLock::new(None))
+        };
+
+        let domain_config = std::sync::Arc::new(std::sync::RwLock::new(config.domains.clone()));
+
         Self {
             config,
             bind_addr,
             load_balancer,
+            domain_config,
             traffic_logger,
             tls_manager,
+            routing_engine,
+            plugins,
         }
     }
 
@@ -58,40 +99,14 @@ impl ProxyServer {
 
     /// Create a proxy handler with optional routing support
     fn create_handler(&self) -> ProxyHandler {
-        if let Some(routing_config) = &self.config.routing {
-            match RoutingEngine::new(routing_config.clone()) {
-                Ok(routing_engine) => {
-                    info!(
-                        "Initializing proxy handler with advanced routing ({} rules)",
-                        routing_config.rules.len()
-                    );
-                    ProxyHandler::with_routing(
-                        self.config.domains.clone(),
-                        self.load_balancer.clone(),
-                        self.traffic_logger.clone(),
-                        routing_engine,
-                    )
-                }
-                Err(e) => {
-                    warn!(
-                        "Failed to initialize routing engine: {}. Falling back to basic handler",
-                        e
-                    );
-                    ProxyHandler::new(
-                        self.config.domains.clone(),
-                        self.load_balancer.clone(),
-                        self.traffic_logger.clone(),
-                    )
-                }
-            }
-        } else {
-            info!("Initializing proxy handler with basic domain-based routing");
-            ProxyHandler::new(
-                self.config.domains.clone(),
-                self.load_balancer.clone(),
-                self.traffic_logger.clone(),
-            )
-        }
+        // Handler uses shared routing engine (may be None) and sees updates on reload
+        ProxyHandler::with_shared_routing(
+            std::sync::Arc::clone(&self.domain_config),
+            std::sync::Arc::clone(&self.load_balancer),
+            self.traffic_logger.clone(),
+            std::sync::Arc::clone(&self.routing_engine),
+            std::sync::Arc::clone(&self.plugins),
+        )
     }
 
     pub async fn run(self) -> Result<()> {
@@ -166,6 +181,32 @@ impl ProxyServer {
         }
 
         Ok(())
+    }
+}
+
+impl ProxyServer {
+    #[allow(dead_code)]
+    pub fn load_balancer_handle(&self) -> std::sync::Arc<tokio::sync::RwLock<LoadBalancer>> {
+        std::sync::Arc::clone(&self.load_balancer)
+    }
+
+    #[allow(dead_code)]
+    pub fn routing_engine_handle(
+        &self,
+    ) -> std::sync::Arc<tokio::sync::RwLock<Option<RoutingEngine>>> {
+        std::sync::Arc::clone(&self.routing_engine)
+    }
+
+    #[allow(dead_code)]
+    pub fn plugins_handle(&self) -> SharedPluginEngine {
+        std::sync::Arc::clone(&self.plugins)
+    }
+
+    #[allow(dead_code)]
+    pub fn domain_config_handle(
+        &self,
+    ) -> std::sync::Arc<std::sync::RwLock<crate::config::DomainConfig>> {
+        std::sync::Arc::clone(&self.domain_config)
     }
 }
 

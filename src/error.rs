@@ -266,9 +266,7 @@ impl From<anyhow::Error> for DispaError {
             return DispaError::network(format!("HTTP error: {}", hyper_err));
         }
 
-        if let Some(reqwest_err) = err.downcast_ref::<reqwest::Error>() {
-            return DispaError::network(format!("Request error: {}", reqwest_err));
-        }
+        // reqwest no longer used in the forwarding path; keep generic mapping
 
         // Default to internal error
         DispaError::internal(err.to_string())
@@ -295,18 +293,7 @@ impl From<hyper::Error> for DispaError {
     }
 }
 
-/// Convert from reqwest::Error to DispaError
-impl From<reqwest::Error> for DispaError {
-    fn from(err: reqwest::Error) -> Self {
-        if err.is_timeout() {
-            DispaError::timeout(Duration::from_secs(30), "HTTP request")
-        } else if err.is_connect() {
-            DispaError::network(format!("Connection error: {}", err))
-        } else {
-            DispaError::network(format!("Request error: {}", err))
-        }
-    }
-}
+// Note: reqwest::Error mapping removed after migration to hyper for forwarding and health checks
 
 /// Convert from sqlx::Error to DispaError
 impl From<sqlx::Error> for DispaError {

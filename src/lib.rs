@@ -7,6 +7,7 @@ pub mod graceful_shutdown;
 pub mod logger;
 pub mod monitoring;
 pub mod proxy;
+pub mod plugins;
 pub mod retry;
 pub mod routing;
 pub mod tls;

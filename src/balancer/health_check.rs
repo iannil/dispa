@@ -1,7 +1,8 @@
 use anyhow::Result;
-use reqwest::Client;
-use std::collections::HashMap;
+use hyper::StatusCode;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
@@ -32,23 +33,17 @@ impl Default for HealthStatus {
 }
 
 pub struct HealthChecker {
-    client: Client,
     config: HealthCheckConfig,
     health_status: Arc<RwLock<HashMap<String, HealthStatus>>>,
+    shutdown: Arc<AtomicBool>,
 }
 
 impl HealthChecker {
     pub fn new(config: HealthCheckConfig) -> Self {
-        let timeout = Duration::from_secs(config.timeout);
-        let client = Client::builder()
-            .timeout(timeout)
-            .build()
-            .unwrap_or_default();
-
         Self {
-            client,
             config,
             health_status: Arc::new(RwLock::new(HashMap::new())),
+            shutdown: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -72,6 +67,9 @@ impl HealthChecker {
 
         loop {
             interval.tick().await;
+            if self.shutdown.load(Ordering::SeqCst) {
+                return Ok(());
+            }
             self.check_all_targets(&targets).await;
         }
     }
@@ -181,27 +179,20 @@ impl HealthChecker {
         ];
 
         for endpoint in health_endpoints {
-            match self.client.get(&endpoint).send().await {
-                Ok(response) => {
-                    let status = response.status();
-
-                    // Consider 2xx and 3xx as healthy
+            // Enforce overall timeout including connect
+            let timeout = Duration::from_secs(self.config.timeout);
+            match crate::proxy::http_client::get_status(&endpoint, timeout).await {
+                Ok(status) => {
                     if status.is_success() || status.is_redirection() {
-                        debug!(
-                            "Health check successful for '{}' at {}",
-                            target.name, endpoint
-                        );
+                        debug!("Health check successful for '{}' at {}", target.name, endpoint);
                         return Ok(true);
-                    } else if status.as_u16() == 404 {
+                    } else if status == StatusCode::NOT_FOUND {
                         // 404 means endpoint doesn't exist, try next one
                         continue;
                     } else {
-                        // Other error codes are considered unhealthy
                         debug!(
                             "Health check failed for '{}' at {}: HTTP {}",
-                            target.name,
-                            endpoint,
-                            status.as_u16()
+                            target.name, endpoint, status.as_u16()
                         );
                         return Ok(false);
                     }
@@ -211,7 +202,6 @@ impl HealthChecker {
                         "Health check request failed for '{}' at {}: {}",
                         target.name, endpoint, e
                     );
-                    // Connection error, try next endpoint or return error if last one
                     continue;
                 }
             }
@@ -258,12 +248,9 @@ impl HealthChecker {
     #[allow(dead_code)]
     pub async fn check_target_with_custom_path(&self, target: &Target, path: &str) -> bool {
         let health_url = format!("{}{}", target.url, path);
-
-        match self.client.get(&health_url).send().await {
-            Ok(response) => {
-                let status = response.status();
-                status.is_success() || status.is_redirection()
-            }
+        let timeout = Duration::from_secs(self.config.timeout);
+        match crate::proxy::http_client::get_status(&health_url, timeout).await {
+            Ok(status) => status.is_success() || status.is_redirection(),
             Err(e) => {
                 error!(
                     "Custom health check failed for '{}' at {}: {}",
@@ -278,10 +265,17 @@ impl HealthChecker {
 impl Clone for HealthChecker {
     fn clone(&self) -> Self {
         Self {
-            client: self.client.clone(),
             config: self.config.clone(),
             health_status: Arc::clone(&self.health_status),
+            shutdown: Arc::clone(&self.shutdown),
         }
+    }
+}
+
+impl HealthChecker {
+    #[allow(dead_code)]
+    pub fn stop(&self) {
+        self.shutdown.store(true, Ordering::SeqCst);
     }
 }
 
