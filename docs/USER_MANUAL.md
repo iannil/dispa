@@ -638,3 +638,269 @@ groups:
 - **文档改进**：[Documentation]
 
 如有问题或建议，欢迎提交 Issue 或 Pull Request！
+
+---
+
+## 配置补充：HTTP 客户端连接池与自定义直方图
+
+### 上游 HTTP 客户端连接池（性能优化）
+
+用于控制转发到后端时的连接复用与超时，减少建连开销、提高吞吐。
+
+```toml
+[http_client]
+# 每个主机的最大空闲连接数（默认 32）
+pool_max_idle_per_host = 32
+# 空闲连接回收超时秒数（默认 90）
+pool_idle_timeout_secs = 90
+# 健康检查等简单 GET 的请求超时（秒，默认 5）
+connect_timeout_secs = 5
+
+# 环境变量覆盖：
+# DISPA_HTTP_POOL_MAX_IDLE_PER_HOST, DISPA_HTTP_POOL_IDLE_TIMEOUT_SECS, DISPA_HTTP_CONNECT_TIMEOUT_SECS
+```
+
+### Prometheus 直方图桶（可选）
+
+对关键耗时指标自定义直方图 buckets，便于更精细的 Pxx 观测。注意 buckets 配置统一使用毫秒，若指标名以 `_seconds` 结尾会自动换算为秒。
+
+```toml
+[monitoring]
+enabled = true
+metrics_port = 9090
+health_check_port = 8081
+
+[[monitoring.histogram_buckets]]
+metric = "dispa_log_write_duration_ms"
+buckets_ms = [0.5, 1, 2, 5, 10, 20, 50, 100, 200]
+
+[[monitoring.histogram_buckets]]
+metric = "dispa_target_health_check_duration_ms"
+buckets_ms = [5, 10, 25, 50, 100, 250, 500, 1000]
+
+[[monitoring.histogram_buckets]]
+metric = "dispa_request_duration_seconds"   # 注意：仍以毫秒填写，系统会自动 /1000
+buckets_ms = [1, 2.5, 5, 10, 25, 50, 100, 250, 500, 1000]
+```
+
+内置默认 buckets：
+
+- dispa_log_write_duration_ms: [0.25, 0.5, 1, 2.5, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000]
+- dispa_target_health_check_duration_ms: [1, 2.5, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000]
+- dispa_request_duration_seconds: [0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10]
+
+---
+
+## 插件系统与开发（实验特性）
+
+完整、持续更新的插件文档已拆分至：`docs/PLUGINS.md`。以下为概要；如需开发与高级用法，请参考该文件。
+
+本节介绍如何启用与配置插件链、每路由（per-route）插件、以及如何开发外部命令插件和 WASM 插件。
+
+### 1. 启用与基础概念
+
+- 全局插件链：在配置的 `plugins.plugins` 列表中注册的插件，按声明顺序执行。
+- 阶段（stage）：`request`、`response`、`both`。请求阶段可短路（直接返回响应），响应阶段可修改响应头/体。
+- 执行时机：`apply_before_domain_match` 控制请求阶段插件在域名拦截检查之前（true，默认）或之后（false）执行。
+- 错误策略：`error_strategy` = `continue`（记录并忽略）或 `fail`（短路 500）。
+
+最小示例（也可参考 `config/plugins-example.toml`）：
+
+```toml
+[plugins]
+enabled = true
+apply_before_domain_match = true
+
+[[plugins.plugins]]
+name = "inject"
+type = "headerinjector"
+enabled = true
+stage = "both"
+error_strategy = "continue"
+config = { request_headers = { "x-request-id" = "abc" }, response_headers = { "x-power" = "dispa" } }
+```
+
+内置插件类型（`type` 值，均为小写）：
+- `headerinjector` / `headeroverride`：设置请求/响应头（常量值）。
+- `blocklist`：按 host 精确匹配 或 path 前缀匹配拦截请求，返回 403。
+- `pathrewrite`：按前缀改写路径（from_prefix -> to_prefix）。
+- `hostrewrite`：重写 Host 头。
+- `ratelimiter`：简单令牌桶限流（按 `method:host:path` 维度）。
+- `command`：外部命令插件（需 `--features cmd-plugin`）。
+- `wasm`：WASM 插件（需 `--features wasm-plugin`）。
+
+各插件 `config` 字段示例：
+
+```toml
+# headerinjector / headeroverride
+config = { request_headers = { "k1" = "v1" }, response_headers = { "k2" = "v2" } }
+
+# blocklist
+config = { hosts = ["internal.example.com"], paths = ["/admin", "/private"] }
+
+# pathrewrite
+config = { from_prefix = "/old", to_prefix = "/new" }
+
+# hostrewrite
+config = { host = "api.internal" }
+
+# ratelimiter
+config = { rate_per_sec = 100.0, burst = 200.0 }
+```
+
+### 2. 每路由插件链（与 routing 集成）
+
+在路由规则中引用已注册的插件名，仅对命中该规则的请求/响应生效，并且在全局响应插件之前执行：
+
+```toml
+[routing]
+enable_logging = true
+default_target = "backend"
+
+[[routing.rules]]
+name = "api-rule"
+priority = 100
+enabled = true
+target = "backend"
+
+[routing.rules.conditions]
+[routing.rules.conditions.path]
+prefix = "/api"
+
+# 按名称引用
+routing.rules.plugins_request = ["route-tag"]
+routing.rules.plugins_response = ["route-tag"]
+# 可选：排序与去重
+# routing.rules.plugins_order = "as_listed|name_asc|name_desc"
+# routing.rules.plugins_dedup = true
+```
+
+完整例子见 `config/routing-plugins-example.toml`。
+
+### 3. 外部命令插件开发（Command，需 `cmd-plugin` 特性）
+
+构建运行：
+
+```bash
+cargo run --features cmd-plugin -- -c config/plugins-example.toml -v
+```
+
+协议：
+- 输入（stdin）：JSON，例如 `{ "stage": "request", "method": "GET", "path": "/api", "headers": {"host":"..."} }`
+- 输出（stdout）：JSON，支持两种指令：
+  - `{"set_headers": {"Header":"Value"}}` 设置（或覆盖）头
+  - `{"short_circuit": {"status": 403, "body": "blocked"}}` 短路返回
+
+安全建议：
+- 强烈建议配置 `exec_allowlist = ["/path/to/your-plugin"]` 仅允许白名单可执行文件。
+- 使用 `max_concurrency` 限制并发执行，`timeout_ms` 设置超时。
+
+示例（Bash）：`examples/plugins/cmd_headers.sh`
+
+```bash
+#!/usr/bin/env bash
+read -r _INPUT
+echo '{ "set_headers": { "x-cmd-plugin": "1" } }'
+```
+
+示例（Bash，短路）：`examples/plugins/cmd_block.sh`
+
+```bash
+#!/usr/bin/env bash
+read -r _INPUT
+echo '{ "short_circuit": { "status": 418, "body": "blocked by cmd plugin" } }'
+```
+
+配置示例：
+
+```toml
+[[plugins.plugins]]
+name = "cmd-headers"
+type = "command"
+enabled = true
+stage = "request"
+error_strategy = "continue"
+config = {
+  exec = "./examples/plugins/cmd_headers.sh",
+  timeout_ms = 200,
+  max_concurrency = 8,
+  exec_allowlist = ["./examples/plugins/cmd_headers.sh"],
+}
+```
+
+可观测性：
+- `dispa_plugin_cmd_exec_duration_ms{plugin}`
+- `dispa_plugin_cmd_errors_total{plugin,kind}`（status/io/exec）
+- `dispa_plugin_cmd_timeouts_total{plugin}`
+
+### 4. WASM 插件开发（PoC，需 `wasm-plugin` 特性）
+
+运行时约定：导出函数 `alloc(i32)->i32`, `dealloc(i32,i32)`, `dispa_on_request(i32,i32)->i32`, `dispa_on_response(i32,i32)->i32`, `dispa_get_result_len()->i32`；内存中交换 JSON 字符串，返回 JSON 的语义与命令插件一致（支持 `set_headers` 与 `short_circuit`）。
+
+构建运行：
+
+```bash
+cargo run --features wasm-plugin -- -c config/plugins-example.toml -v
+```
+
+示例 1（WAT -> WASM）：`examples/wasm/filter.wat`
+
+```bash
+wat2wasm examples/wasm/filter.wat -o examples/wasm/filter.wasm
+```
+
+示例 2（Rust -> WASI WASM）：`examples/wasm/rust-plugin`
+
+```bash
+cargo build -p dispa-wasm-plugin --target wasm32-wasi --release
+# 生成：target/wasm32-wasi/release/dispa_wasm_plugin.wasm
+```
+
+配置示例：
+
+```toml
+[[plugins.plugins]]
+name = "wasm-filter"
+type = "wasm"
+enabled = true
+stage = "request"
+error_strategy = "continue"
+config = { module_path = "./examples/wasm/filter.wasm", timeout_ms = 200, max_concurrency = 16 }
+```
+
+### 5. 插件指标与错误策略
+
+- `dispa_plugin_invocations_total{plugin,stage}`
+- `dispa_plugin_short_circuits_total{plugin,stage}`
+- `dispa_plugin_duration_ms{plugin,stage}`
+- `dispa_plugin_errors_total{plugin,stage,kind}`（panic/exec/io/timeout 等）
+
+错误策略说明：
+- `continue`：插件内部错误被记录并忽略，继续下游处理。
+- `fail`：请求阶段遇到错误立即短路 500；响应阶段则将响应改为 500。
+
+### 6. 调试与排查
+
+- 启用调试日志：`RUST_LOG=debug` 或启动参数 `-v`。
+- 在 `/metrics` 中观察上述插件指标；结合直方图 buckets 配置观测延时分布。
+- 若使用命令插件，优先从系统日志中确认可执行文件权限、工作目录、超时等问题。
+
+注意：当前 `headerinjector/headeroverride` 仅支持常量值注入，不支持内置“动态值”生成。
+
+---
+
+## 附录补充：更多环境变量覆盖
+
+| 变量名 | 说明 |
+|--------|------|
+| `DISPA_BIND_ADDRESS` | 覆盖配置中的监听地址 |
+| `DISPA_WORKERS` | 覆盖工作线程数 |
+| `DISPA_REQUEST_TIMEOUT` | 覆盖请求超时秒数 |
+| `DISPA_METRICS_PORT` | 覆盖监控端口 |
+| `DISPA_HEALTH_CHECK_PORT` | 覆盖健康检查端口 |
+| `DISPA_LOGGING_ENABLED` | 覆盖日志开关 |
+| `DISPA_LOGGING_TYPE` | 覆盖日志类型 `database|file|both` |
+| `DISPA_LOG_DIRECTORY` | 覆盖文件日志目录 |
+| `DISPA_HTTP_POOL_MAX_IDLE_PER_HOST` | 上游连接池最大空闲连接数（默认 32） |
+| `DISPA_HTTP_POOL_IDLE_TIMEOUT_SECS` | 上游连接池空闲回收秒数（默认 90） |
+| `DISPA_HTTP_CONNECT_TIMEOUT_SECS` | 健康检查/简单 GET 超时秒数（默认 5） |

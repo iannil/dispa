@@ -218,6 +218,8 @@ curl http://localhost:9090/metrics
 - **[数据库指南](docs/DATABASE.md)** - SQLite / PostgreSQL 连接与迁移
 - **[安全配置示例](docs/SECURITY.md)** - 访问控制 / 认证 / 全局限流 / DDoS 保护
 - **[管理界面](docs/ADMIN.md)** - Web 管理控制台 / 实时监控 / 配置管理
+- **[English Manual](docs/USER_MANUAL_EN.md)** - Full user manual in English
+- **[插件开发指南](docs/PLUGINS.md)** - 插件系统 / 每路由插件 / 命令与 WASM 插件
 
 ## 🏗️ 架构
 
@@ -346,7 +348,7 @@ MIT License - 详见 [LICENSE](LICENSE) 文件
 
 <div align="center">
 
-**[快速开始](./docs/QUICKSTART.md)** • **[用户手册](./docs/USER_MANUAL.md)** • **[开发指南](./docs/DEVELOPMENT.md)**
+**[快速开始](./docs/QUICKSTART.md)** • **[用户手册](./docs/USER_MANUAL.md)** • **[English Manual](./docs/USER_MANUAL_EN.md)** • **[插件开发](./docs/PLUGINS.md)** • **[开发指南](./docs/DEVELOPMENT.md)**
 
 Made with ❤️ in Rust
 
