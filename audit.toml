@@ -1,0 +1,13 @@
+[advisories]
+# We do not enable or use the MySQL driver. `rsa` is pulled transitively via
+# `sqlx-mysql` as a build-time dependency of `sqlx-macros-core`.
+# There is no fixed version of `rsa` yet (RUSTSEC-2023-0071). We explicitly
+# ignore this advisory while MySQL is not used/enabled in this project.
+ignore = [
+    "RUSTSEC-2023-0071",
+]
+
+# Treat these as informational only; do not fail CI on them.
+informational_warnings = [
+    "unmaintained",
+]
