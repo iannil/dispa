@@ -212,9 +212,9 @@ curl http://localhost:9090/metrics
 
 ## 📖 文档
 
-- **[快速开始指南](QUICKSTART.md)** - 5分钟上手教程
-- **[完整用户手册](USER_MANUAL.md)** - 详细配置和使用说明
-- **[开发指南](DEVELOPMENT.md)** - 架构设计和扩展开发
+- **[快速开始指南](docs/QUICKSTART.md)** - 5分钟上手教程
+- **[完整用户手册](docs/USER_MANUAL.md)** - 详细配置和使用说明
+- **[开发指南](docs/DEVELOPMENT.md)** - 架构设计和扩展开发
 - **[数据库指南](docs/DATABASE.md)** - SQLite / PostgreSQL 连接与迁移
 - **[安全配置示例](docs/SECURITY.md)** - 访问控制 / 认证 / 全局限流 / DDoS 保护
 - **[管理界面](docs/ADMIN.md)** - Web 管理控制台 / 实时监控 / 配置管理
