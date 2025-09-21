@@ -47,6 +47,12 @@ impl HealthChecker {
         }
     }
 
+    #[cfg(test)]
+    pub async fn set_health_status_for_test(&self, map: HashMap<String, HealthStatus>) {
+        let mut status_map = self.health_status.write().await;
+        *status_map = map;
+    }
+
     pub async fn start_monitoring(&self, targets: Vec<Target>) -> Result<()> {
         if !self.config.enabled {
             info!("Health checks are disabled");

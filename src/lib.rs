@@ -11,6 +11,7 @@ pub mod plugins;
 pub mod retry;
 pub mod routing;
 pub mod tls;
+pub mod security;
 
 // Re-export commonly used types
 pub use cache::{CacheConfig, CacheEntry, CacheMetrics, CachePolicy, CachePolicyPattern};

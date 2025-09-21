@@ -1,7 +1,7 @@
 use dispa::config::{
     Config, DatabaseConfig, DomainConfig, FileConfig, HealthCheckConfig, LoadBalancingConfig,
     LoadBalancingType, LoggingConfig, LoggingType, MonitoringConfig, ServerConfig, Target,
-    TargetConfig,
+    TargetConfig, HttpClientConfig,
 };
 use dispa::logger::TrafficLogger;
 use dispa::proxy::ProxyServer;
@@ -62,10 +62,14 @@ fn create_integration_test_config() -> Config {
             enabled: false, // Disable for integration tests
             metrics_port: 9090,
             health_check_port: 8081,
+            histogram_buckets: None,
         },
         tls: None,
         routing: None,
         cache: None,
+        http_client: Some(HttpClientConfig{ pool_max_idle_per_host: Some(8), pool_idle_timeout_secs: Some(30), connect_timeout_secs: Some(2) }),
+        plugins: None,
+        security: None,
     }
 }
 
@@ -112,10 +116,14 @@ fn create_minimal_test_config() -> Config {
             enabled: false,
             metrics_port: 9090,
             health_check_port: 8081,
+            histogram_buckets: None,
         },
         tls: None,
         routing: None,
         cache: None,
+        http_client: Some(HttpClientConfig{ pool_max_idle_per_host: Some(8), pool_idle_timeout_secs: Some(30), connect_timeout_secs: Some(2) }),
+        plugins: None,
+        security: None,
     }
 }
 
@@ -396,7 +404,8 @@ async fn test_logging_configuration_integration() {
             log_type: LoggingType::File,
             database: None,
             file: Some(FileConfig {
-                directory: "/tmp/dispa_test_logs".to_string(),
+                // Use workspace-local directory to avoid sandbox issues
+                directory: "target/test_logs/integration".to_string(),
                 max_file_size: Some(1000000),
                 rotation: true,
             }),
@@ -420,6 +429,10 @@ async fn test_logging_configuration_integration() {
         let traffic_logger = TrafficLogger::new(logging_config.clone());
         let mut config = create_minimal_test_config();
         config.logging = logging_config;
+        // Ensure required optional fields are present
+        config.http_client = None;
+        config.plugins = None;
+        config.security = None;
 
         let proxy_server = ProxyServer::new(config, bind_addr, traffic_logger);
 
@@ -479,6 +492,9 @@ async fn test_health_check_configuration_integration() {
     for health_config in health_configs {
         let mut config = create_minimal_test_config();
         config.targets.health_check = health_config;
+        config.http_client = None;
+        config.plugins = None;
+        config.security = None;
 
         let proxy_server = ProxyServer::new(config, bind_addr, traffic_logger.clone());
 
@@ -553,10 +569,14 @@ async fn test_complete_configuration_integration() {
             enabled: false, // Disabled for test
             metrics_port: 9090,
             health_check_port: 8081,
+            histogram_buckets: None,
         },
         tls: None,
         routing: None,
         cache: None,
+        http_client: Some(HttpClientConfig{ pool_max_idle_per_host: Some(8), pool_idle_timeout_secs: Some(30), connect_timeout_secs: Some(2) }),
+        plugins: None,
+        security: None,
     };
 
     // Verify configuration is valid
@@ -627,10 +647,14 @@ async fn test_configuration_edge_cases_integration() {
             enabled: false,
             metrics_port: 1024,      // Minimum non-privileged port
             health_check_port: 1025, // Minimum non-privileged port + 1
+            histogram_buckets: None,
         },
         tls: None,
         routing: None,
         cache: None,
+        http_client: None,
+        plugins: None,
+        security: None,
     };
 
     // Verify edge case configuration is valid

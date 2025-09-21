@@ -50,6 +50,10 @@ notify = "6.1"
 regex = "1.11.2"
 url = "2.5.7"
 
+# Optional JWT RS256 verification (ring), and JWKS fetch (reqwest)
+ring = { version = "0.17", optional = true }
+reqwest = { version = "0.11", default-features = false, features = ["rustls-tls"], optional = true }
+
 # Optional WASM runtime
 wasmtime = { version = "18", optional = true }
 wasmtime-wasi = { version = "18", optional = true }
@@ -64,3 +68,7 @@ default = []
 cmd-plugin = []
 # Enable WASM plugin support (PoC, off by default)
 wasm-plugin = ["wasmtime", "wasmtime-wasi"]
+# Enable JWT RS256 verification via ring
+jwt-rs256 = ["ring"]
+# Enable JWKS fetch via reqwest
+jwt-rs256-net = ["reqwest", "jwt-rs256"]

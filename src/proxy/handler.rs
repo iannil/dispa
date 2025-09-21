@@ -12,6 +12,7 @@ use std::sync::RwLock as StdRwLock;
 use crate::logger::TrafficLogger;
 use crate::routing::RoutingEngine;
 use crate::plugins::{PluginResult, SharedPluginEngine};
+use crate::security::SharedSecurity;
 
 #[derive(Clone)]
 pub struct ProxyHandler {
@@ -20,6 +21,7 @@ pub struct ProxyHandler {
     traffic_logger: TrafficLogger,
     routing_engine: std::sync::Arc<tokio::sync::RwLock<Option<RoutingEngine>>>,
     plugins: SharedPluginEngine,
+    security: SharedSecurity,
 }
 
 impl ProxyHandler {
@@ -27,13 +29,14 @@ impl ProxyHandler {
         domain_config: std::sync::Arc<StdRwLock<DomainConfig>>,
         load_balancer: std::sync::Arc<tokio::sync::RwLock<LoadBalancer>>,
         traffic_logger: TrafficLogger,
-    ) -> Self {
+        ) -> Self {
         Self {
             domain_config,
             load_balancer,
             traffic_logger,
             routing_engine: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
             plugins: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
+            security: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
         }
     }
 
@@ -43,6 +46,7 @@ impl ProxyHandler {
         traffic_logger: TrafficLogger,
         routing_engine: std::sync::Arc<tokio::sync::RwLock<Option<RoutingEngine>>>,
         plugins: SharedPluginEngine,
+        security: SharedSecurity,
     ) -> Self {
         Self {
             domain_config,
@@ -50,6 +54,7 @@ impl ProxyHandler {
             traffic_logger,
             routing_engine,
             plugins,
+            security,
         }
     }
 
@@ -69,6 +74,8 @@ impl ProxyHandler {
     async fn process_request(&self, mut req: Request<Body>) -> Result<Response<Body>> {
         let request_id = Uuid::new_v4();
         let start_time = Utc::now();
+        // Capture client address early (extensions may be consumed later)
+        let captured_client_addr = req.extensions().get::<std::net::SocketAddr>().cloned().unwrap_or_else(|| "127.0.0.1:0".parse().unwrap());
 
         // Extract host and method from request headers before moving req
         let host = req
@@ -82,6 +89,15 @@ impl ProxyHandler {
         let path = req.uri().path().to_string();
 
         debug!("Request {} to {}", request_id, host);
+
+        // Security checks (global, earliest)
+        {
+            let client_ip = req.extensions().get::<std::net::SocketAddr>().map(|sa| sa.ip());
+            let guard = self.security.read().await;
+            if let Some(sec) = guard.as_ref() {
+                if let Some(resp) = sec.check_request(&req, client_ip).await { return Ok(resp); }
+            }
+        }
 
         // Plugins: request phase (position controlled by plugins config)
         let mut applied_request_plugins = false;
@@ -282,11 +298,12 @@ impl ProxyHandler {
         let std_duration = std::time::Duration::from_millis(duration.num_milliseconds() as u64);
 
         // Log the traffic
+        let client_addr = captured_client_addr;
         if let Err(e) = self
             .traffic_logger
             .log_request(
                 request_id,
-                "127.0.0.1:0".parse().unwrap(),
+                client_addr,
                 &host,
                 &method,
                 &path,
@@ -350,8 +367,21 @@ impl ProxyHandler {
         req: Request<Body>,
         target_url: &str,
     ) -> Result<Response<Body>> {
-        // Forward via shared pooled hyper client; streams bodies (no full buffering)
-        super::http_client::forward(req, target_url).await
+        // Forward via shared pooled hyper client; apply streaming body limit if configured
+        let limit = {
+            let guard = self.security.read().await;
+            guard.as_ref().and_then(|s| s.max_body_bytes())
+        };
+        match super::http_client::forward_with_limit(req, target_url, limit).await {
+            Ok(resp) => Ok(resp),
+            Err(e) => {
+                // Map payload too large to 413
+                if matches!(e, crate::error::DispaError::PayloadTooLarge{ .. }) {
+                    return Ok(Response::builder().status(StatusCode::PAYLOAD_TOO_LARGE).body(Body::from("Payload too large")).unwrap());
+                }
+                Err(anyhow::anyhow!(e))
+            }
+        }
     }
 }
 
@@ -374,8 +404,9 @@ mod tests {
     use super::*;
     use crate::balancer::LoadBalancer;
     use crate::config::{
-        DomainConfig, HealthCheckConfig, LoadBalancingConfig, LoadBalancingType, TargetConfig, PluginsConfig, PluginConfig, PluginType, PluginStage, PluginErrorStrategy, RoutingConfig, RoutingRule, RoutingConditions, PathConditions, RoutingActions,
+        DomainConfig, HealthCheckConfig, LoadBalancingConfig, LoadBalancingType, TargetConfig, PluginsConfig, PluginConfig, PluginType, PluginStage, PluginErrorStrategy, Target,
     };
+    use crate::routing::{RoutingConfig, RoutingRule, RoutingConditions, PathConditions, RoutingActions};
     use crate::logger::TrafficLogger;
     use crate::plugins::PluginEngine;
 
@@ -414,8 +445,9 @@ mod tests {
             file: None,
             retention_days: None,
         });
-
-        ProxyHandler::new(domain_config, load_balancer, traffic_logger)
+        let domain_arc = std::sync::Arc::new(std::sync::RwLock::new(domain_config));
+        let lb_arc = std::sync::Arc::new(tokio::sync::RwLock::new(load_balancer));
+        ProxyHandler::new(domain_arc, lb_arc, traffic_logger)
     }
 
     trait WithRouting {
@@ -427,6 +459,245 @@ mod tests {
             self.routing_engine = std::sync::Arc::new(tokio::sync::RwLock::new(engine));
             self
         }
+    }
+
+    trait WithSecurity {
+        fn with_security(self, sec: Option<crate::security::SecurityManager>) -> Self;
+    }
+
+    impl WithSecurity for ProxyHandler {
+        fn with_security(mut self, sec: Option<crate::security::SecurityManager>) -> Self {
+            self.security = std::sync::Arc::new(tokio::sync::RwLock::new(sec));
+            self
+        }
+    }
+
+    #[tokio::test]
+    async fn test_per_route_response_plugin_header_set() {
+        use crate::config::*;
+        use crate::plugins::PluginEngine;
+
+        // Prepare plugins: a response header injector named 'route-resp'
+        let plugins_cfg = PluginsConfig { enabled: true, apply_before_domain_match: false, plugins: vec![
+            PluginConfig{ name: "route-resp".into(), plugin_type: PluginType::HeaderInjector, enabled: true, stage: PluginStage::Response, config: Some(serde_json::json!({"response_headers": {"x-route-resp": "ok"}})), error_strategy: PluginErrorStrategy::Continue }
+        ]};
+        let engine = PluginEngine::new(&plugins_cfg).unwrap();
+
+        // Routing: rule applies response plugin subset and no custom response
+        let routing_cfg = RoutingConfig {
+            rules: vec![RoutingRule{
+                name: "resp-rule".into(), priority: 100, enabled: true, target: "default".into(),
+                conditions: RoutingConditions{ path: Some(PathConditions{ exact: None, prefix: Some("/api".into()), suffix: None, regex: None, contains: None }), method: None, headers: None, query_params: None, host: None },
+                actions: RoutingActions{ headers: None, path: None, request_transform: None, response_transform: None, custom_response: None },
+                plugins_request: None, plugins_response: Some(vec!["route-resp".into()]), plugins_order: None, plugins_dedup: None,
+            }],
+            default_target: Some("default".into()), enable_logging: false,
+        };
+        let routing_engine = crate::routing::RoutingEngine::new(routing_cfg).unwrap();
+
+        // Handler with routing + plugins (no upstream targets to avoid network; will produce 503)
+        let domain_config = DomainConfig { intercept_domains: vec!["example.com".into()], exclude_domains: None, wildcard_support: true };
+        let handler = create_handler_with_plugins(domain_config, Some(engine)).with_routing(Some(routing_engine));
+        let req = Request::builder().uri("http://localhost/api").header(HOST, "example.com").body(Body::empty()).unwrap();
+        let resp = handler.handle_request(req).await.unwrap();
+        // Header should be injected by per-route response plugin
+        assert_eq!(resp.headers().get("x-route-resp").and_then(|v| v.to_str().ok()), Some("ok"));
+    }
+
+    #[tokio::test]
+    async fn test_per_route_response_order_and_dedup_affect_header() {
+        use crate::config::*;
+        use crate::plugins::PluginEngine;
+
+        // Two response plugins set the same header with different values
+        let plugins_cfg = PluginsConfig { enabled: true, apply_before_domain_match: false, plugins: vec![
+            PluginConfig{ name: "AResp".into(), plugin_type: PluginType::HeaderInjector, enabled: true, stage: PluginStage::Response, config: Some(serde_json::json!({"response_headers": {"x-order": "A"}})), error_strategy: PluginErrorStrategy::Continue },
+            PluginConfig{ name: "BResp".into(), plugin_type: PluginType::HeaderInjector, enabled: true, stage: PluginStage::Response, config: Some(serde_json::json!({"response_headers": {"x-order": "B"}})), error_strategy: PluginErrorStrategy::Continue },
+        ]};
+        let engine = PluginEngine::new(&plugins_cfg).unwrap();
+
+        // Base routing engine; we will mutate per test case
+        let mut base_rule = RoutingRule{
+            name: "resp-order".into(), priority: 100, enabled: true, target: "default".into(),
+            conditions: RoutingConditions{ path: Some(PathConditions{ exact: None, prefix: Some("/api".into()), suffix: None, regex: None, contains: None }), method: None, headers: None, query_params: None, host: None },
+            actions: RoutingActions{ headers: None, path: None, request_transform: None, response_transform: None, custom_response: None },
+            plugins_request: None, plugins_response: None, plugins_order: None, plugins_dedup: None,
+        };
+
+        let domain_config = DomainConfig { intercept_domains: vec!["example.com".into()], exclude_domains: None, wildcard_support: true };
+
+        // Case 1: AsListed with duplicates [B,A,B] -> final should be B
+        base_rule.plugins_response = Some(vec!["BResp".into(), "AResp".into(), "BResp".into()]);
+        base_rule.plugins_order = Some(crate::routing::PluginOrder::AsListed);
+        base_rule.plugins_dedup = Some(false);
+        let routing_engine = crate::routing::RoutingEngine::new(RoutingConfig{ rules: vec![base_rule.clone()], default_target: Some("default".into()), enable_logging: false }).unwrap();
+        let handler = create_handler_with_plugins(domain_config.clone(), Some(PluginEngine::new(&plugins_cfg).unwrap())).with_routing(Some(routing_engine));
+        let req = Request::builder().uri("http://localhost/api").header(HOST, "example.com").body(Body::empty()).unwrap();
+        let resp = handler.handle_request(req).await.unwrap();
+        assert_eq!(resp.headers().get("x-order").and_then(|v| v.to_str().ok()), Some("B"));
+
+        // Case 2: NameDesc with dedup true on [B,A,B] -> sorted [B,A,B] -> dedup keeps first B -> [B,A], final should be A
+        base_rule.plugins_response = Some(vec!["BResp".into(), "AResp".into(), "BResp".into()]);
+        base_rule.plugins_order = Some(crate::routing::PluginOrder::NameDesc);
+        base_rule.plugins_dedup = Some(true);
+        let routing_engine = crate::routing::RoutingEngine::new(RoutingConfig{ rules: vec![base_rule.clone()], default_target: Some("default".into()), enable_logging: false }).unwrap();
+        let handler = create_handler_with_plugins(domain_config.clone(), Some(PluginEngine::new(&plugins_cfg).unwrap())).with_routing(Some(routing_engine));
+        let req = Request::builder().uri("http://localhost/api").header(HOST, "example.com").body(Body::empty()).unwrap();
+        let resp = handler.handle_request(req).await.unwrap();
+        assert_eq!(resp.headers().get("x-order").and_then(|v| v.to_str().ok()), Some("A"));
+
+        // Case 3: Per-route vs Global override on same key -> global runs after per-route, so global wins
+        // We simulate by having global engine include 'global-resp' after 'AResp' and 'BResp', while per-route applies 'AResp'
+        let plugins_cfg2 = PluginsConfig { enabled: true, apply_before_domain_match: false, plugins: vec![
+            PluginConfig{ name: "AResp".into(), plugin_type: PluginType::HeaderInjector, enabled: true, stage: PluginStage::Response, config: Some(serde_json::json!({"response_headers": {"x-k": "A"}})), error_strategy: PluginErrorStrategy::Continue },
+            PluginConfig{ name: "global-resp".into(), plugin_type: PluginType::HeaderInjector, enabled: true, stage: PluginStage::Response, config: Some(serde_json::json!({"response_headers": {"x-k": "G"}})), error_strategy: PluginErrorStrategy::Continue },
+        ]};
+        let engine2 = PluginEngine::new(&plugins_cfg2).unwrap();
+        base_rule.plugins_response = Some(vec!["AResp".into()]);
+        base_rule.plugins_order = Some(crate::routing::PluginOrder::AsListed);
+        base_rule.plugins_dedup = Some(false);
+        let routing_engine = crate::routing::RoutingEngine::new(RoutingConfig{ rules: vec![base_rule.clone()], default_target: Some("default".into()), enable_logging: false }).unwrap();
+        let handler = create_handler_with_plugins(domain_config.clone(), Some(engine2)).with_routing(Some(routing_engine));
+        let req = Request::builder().uri("http://localhost/api").header(HOST, "example.com").body(Body::empty()).unwrap();
+        let resp = handler.handle_request(req).await.unwrap();
+        // global plugin ran after per-route subset -> G overrides A
+        assert_eq!(resp.headers().get("x-k").and_then(|v| v.to_str().ok()), Some("G"));
+    }
+
+    #[tokio::test]
+    async fn test_streaming_body_under_limit_not_interrupted() {
+        use crate::config::*;
+        // Security limit high enough so body passes
+        let sec_cfg = crate::security::SecurityConfig{ enabled: true, access_control: None, auth: None, rate_limit: None, ddos: Some(crate::security::DdosConfig{ max_headers: None, max_header_bytes: None, max_body_bytes: Some(1024), require_content_length: Some(false) }), jwt: None };
+        let sec_mgr = crate::security::SecurityManager::new(sec_cfg);
+
+        let domain_config = DomainConfig { intercept_domains: vec!["example.com".into()], exclude_domains: None, wildcard_support: true };
+        let target_config = TargetConfig{ targets: vec![], load_balancing: LoadBalancingConfig{ lb_type: LoadBalancingType::RoundRobin, sticky_sessions: false }, health_check: HealthCheckConfig{ enabled:false, interval:30, timeout:10, healthy_threshold:2, unhealthy_threshold:3 } };
+        let lb = LoadBalancer::new_for_test(target_config);
+        let traffic_logger = TrafficLogger::new(crate::config::LoggingConfig{ enabled:false, log_type: crate::config::LoggingType::File, database: None, file: None, retention_days: None });
+        let domain_arc = std::sync::Arc::new(std::sync::RwLock::new(domain_config));
+        let lb_arc = std::sync::Arc::new(tokio::sync::RwLock::new(lb));
+        let handler = ProxyHandler::new(domain_arc, lb_arc, traffic_logger).with_security(Some(sec_mgr));
+
+        // Small chunked body (16 bytes < 1024)
+        let (mut tx, body) = Body::channel();
+        tx.send_data(bytes::Bytes::from(vec![0u8; 8])).await.unwrap();
+        tx.send_data(bytes::Bytes::from(vec![0u8; 8])).await.unwrap();
+        drop(tx);
+        let req = Request::builder().uri("http://localhost/").header(HOST, "example.com").method(hyper::Method::POST).body(body).unwrap();
+        let resp = handler.handle_request(req).await.unwrap();
+        // Not interrupted by 413; likely 503 due to no upstream targets
+        assert_ne!(resp.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    }
+
+    #[tokio::test]
+    async fn test_content_length_under_limit_not_interrupted() {
+        use crate::config::*;
+        // Security limit high, content-length provided and below limit
+        let sec_cfg = crate::security::SecurityConfig{ enabled: true, access_control: None, auth: None, rate_limit: None, ddos: Some(crate::security::DdosConfig{ max_headers: None, max_header_bytes: None, max_body_bytes: Some(1024), require_content_length: Some(true) }), jwt: None };
+        let sec_mgr = crate::security::SecurityManager::new(sec_cfg);
+
+        let domain_config = DomainConfig { intercept_domains: vec!["example.com".into()], exclude_domains: None, wildcard_support: true };
+        let target_config = TargetConfig{ targets: vec![], load_balancing: LoadBalancingConfig{ lb_type: LoadBalancingType::RoundRobin, sticky_sessions: false }, health_check: HealthCheckConfig{ enabled:false, interval:30, timeout:10, healthy_threshold:2, unhealthy_threshold:3 } };
+        let lb = LoadBalancer::new_for_test(target_config);
+        let traffic_logger = TrafficLogger::new(crate::config::LoggingConfig{ enabled:false, log_type: crate::config::LoggingType::File, database: None, file: None, retention_days: None });
+        let domain_arc = std::sync::Arc::new(std::sync::RwLock::new(domain_config));
+        let lb_arc = std::sync::Arc::new(tokio::sync::RwLock::new(lb));
+        let handler = ProxyHandler::new(domain_arc, lb_arc, traffic_logger).with_security(Some(sec_mgr));
+
+        // Body with content-length 16 (< 1024), should not be rejected by 413
+        let body = Body::from(vec![0u8; 16]);
+        let req = Request::builder().uri("http://localhost/").header(HOST, "example.com").header(hyper::header::CONTENT_LENGTH, "16").method(hyper::Method::POST).body(body).unwrap();
+        let resp = handler.handle_request(req).await.unwrap();
+        assert_ne!(resp.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    }
+
+    #[tokio::test]
+    async fn test_streaming_body_exceed_limit_413() {
+        use crate::config::*;
+        // Build security with small max_body_bytes
+        let sec_cfg = crate::security::SecurityConfig{ enabled: true, access_control: None, auth: None, rate_limit: None, ddos: Some(crate::security::DdosConfig{ max_headers: None, max_header_bytes: None, max_body_bytes: Some(10), require_content_length: Some(false) }), jwt: None };
+        let sec_mgr = crate::security::SecurityManager::new(sec_cfg);
+
+        // Build a handler with security enabled
+        let domain_config = DomainConfig { intercept_domains: vec!["example.com".into()], exclude_domains: None, wildcard_support: true };
+        let target_config = TargetConfig{ targets: vec![], load_balancing: LoadBalancingConfig{ lb_type: LoadBalancingType::RoundRobin, sticky_sessions: false }, health_check: HealthCheckConfig{ enabled:false, interval:30, timeout:10, healthy_threshold:2, unhealthy_threshold:3 } };
+        let lb = LoadBalancer::new_for_test(target_config);
+        let traffic_logger = TrafficLogger::new(crate::config::LoggingConfig{ enabled:false, log_type: crate::config::LoggingType::File, database: None, file: None, retention_days: None });
+        let domain_arc = std::sync::Arc::new(std::sync::RwLock::new(domain_config));
+        let lb_arc = std::sync::Arc::new(tokio::sync::RwLock::new(lb));
+        let handler = ProxyHandler::new(domain_arc, lb_arc, traffic_logger).with_security(Some(sec_mgr));
+
+        // Build a chunked body exceeding limit
+        let (mut tx, body) = Body::channel();
+        tx.send_data(bytes::Bytes::from(vec![0u8; 8])).await.unwrap();
+        tx.send_data(bytes::Bytes::from(vec![0u8; 8])).await.unwrap(); // total 16 > 10
+        drop(tx);
+        let req = Request::builder().uri("http://localhost/").header(HOST, "example.com").method(hyper::Method::POST).body(body).unwrap();
+        let resp = handler.handle_request(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    }
+
+    #[tokio::test]
+    async fn test_streaming_limit_aborts_upstream_connection() {
+        use hyper::service::{make_service_fn, service_fn};
+        use hyper::{Server, Request as HRequest};
+        use std::sync::{Arc as StdArc};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        // Start a local upstream HTTP server that counts received bytes
+        let received = StdArc::new(AtomicUsize::new(0));
+        let received_clone = StdArc::clone(&received);
+        let make_svc = make_service_fn(move |_conn| {
+            let received = StdArc::clone(&received_clone);
+            async move {
+                Ok::<_, Infallible>(service_fn(move |mut req: HRequest<Body>| {
+                    let received = StdArc::clone(&received);
+                    async move {
+                        while let Some(chunk) = hyper::body::HttpBody::data(req.body_mut()).await { if let Ok(c)=chunk { received.fetch_add(c.len(), Ordering::SeqCst); } else { break; } }
+                        Ok::<_, Infallible>(Response::new(Body::from("ok")))
+                    }
+                }))
+            }
+        });
+        let server = Server::bind(&"127.0.0.1:0".parse().unwrap()).serve(make_svc);
+        let addr = server.local_addr();
+        let server_handle = tokio::spawn(server);
+
+        // Security limit = 8 bytes, will exceed after second chunk
+        let sec_cfg = crate::security::SecurityConfig{ enabled: true, access_control: None, auth: None, rate_limit: None, ddos: Some(crate::security::DdosConfig{ max_headers: None, max_header_bytes: None, max_body_bytes: Some(8), require_content_length: Some(false) }), jwt: None };
+        let sec_mgr = crate::security::SecurityManager::new(sec_cfg);
+
+        // Handler with one healthy target pointing to local server
+        let domain_config = DomainConfig { intercept_domains: vec!["example.com".into()], exclude_domains: None, wildcard_support: true };
+        let target = Target{ name: "t1".into(), url: format!("http://{}", addr), weight: Some(1), timeout: Some(30) };
+        let target_config = TargetConfig{ targets: vec![target.clone()], load_balancing: LoadBalancingConfig{ lb_type: LoadBalancingType::RoundRobin, sticky_sessions: false }, health_check: HealthCheckConfig{ enabled:false, interval:30, timeout:10, healthy_threshold:2, unhealthy_threshold:3 } };
+        let lb = LoadBalancer::new_for_test(target_config);
+        // Mark target healthy
+        let mut map = std::collections::HashMap::new();
+        map.insert(target.name.clone(), crate::balancer::health_check::HealthStatus{ is_healthy: true, ..Default::default() });
+        lb.health_checker().set_health_status_for_test(map).await;
+
+        let traffic_logger = TrafficLogger::new(crate::config::LoggingConfig{ enabled:false, log_type: crate::config::LoggingType::File, database: None, file: None, retention_days: None });
+        let domain_arc = std::sync::Arc::new(std::sync::RwLock::new(domain_config));
+        let lb_arc = std::sync::Arc::new(tokio::sync::RwLock::new(lb));
+        let handler = ProxyHandler::new(domain_arc, lb_arc, traffic_logger).with_security(Some(sec_mgr));
+
+        // Build chunked body of 8 + 8 bytes (limit 8 → exceed)
+        let (mut tx, body) = Body::channel();
+        tx.send_data(bytes::Bytes::from(vec![0u8; 8])).await.unwrap();
+        tx.send_data(bytes::Bytes::from(vec![0u8; 8])).await.unwrap();
+        drop(tx);
+        let req = Request::builder().uri("http://localhost/").header(HOST, "example.com").method(hyper::Method::POST).body(body).unwrap();
+        let resp = handler.handle_request(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::PAYLOAD_TOO_LARGE);
+
+        // Give upstream a moment to process partial body
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let got = received.load(Ordering::SeqCst);
+        assert!(got <= 8, "upstream should receive at most one chunk before abort: got {}", got);
+
+        server_handle.abort();
     }
 
     fn create_handler_with_plugins(domain_config: DomainConfig, engine: Option<PluginEngine>) -> ProxyHandler {
@@ -453,7 +724,9 @@ mod tests {
             retention_days: None,
         });
         let plugins = std::sync::Arc::new(tokio::sync::RwLock::new(engine));
-        ProxyHandler::with_shared_routing(domain_config, load_balancer, traffic_logger, std::sync::Arc::new(tokio::sync::RwLock::new(None)), plugins)
+        let domain_arc = std::sync::Arc::new(std::sync::RwLock::new(domain_config));
+        let lb_arc = std::sync::Arc::new(tokio::sync::RwLock::new(load_balancer));
+        ProxyHandler::with_shared_routing(domain_arc, lb_arc, traffic_logger, std::sync::Arc::new(tokio::sync::RwLock::new(None)), plugins, std::sync::Arc::new(tokio::sync::RwLock::new(None)))
     }
 
     #[tokio::test]
@@ -1162,21 +1435,15 @@ mod tests {
             });
 
             // Should not panic when creating handler with different configs
-            let handler = ProxyHandler::new(domain_config.clone(), load_balancer, traffic_logger);
+            let domain_arc = std::sync::Arc::new(std::sync::RwLock::new(domain_config.clone()));
+            let lb_arc = std::sync::Arc::new(tokio::sync::RwLock::new(load_balancer));
+            let handler = ProxyHandler::new(domain_arc.clone(), lb_arc, traffic_logger);
 
             // Verify the handler was created successfully by checking it accepts its own domains
-            assert_eq!(
-                handler.domain_config.intercept_domains,
-                domain_config.intercept_domains
-            );
-            assert_eq!(
-                handler.domain_config.exclude_domains,
-                domain_config.exclude_domains
-            );
-            assert_eq!(
-                handler.domain_config.wildcard_support,
-                domain_config.wildcard_support
-            );
+            let cfg = domain_arc.read().unwrap();
+            assert_eq!(cfg.intercept_domains, domain_config.intercept_domains);
+            assert_eq!(cfg.exclude_domains, domain_config.exclude_domains);
+            assert_eq!(cfg.wildcard_support, domain_config.wildcard_support);
         }
     }
 }

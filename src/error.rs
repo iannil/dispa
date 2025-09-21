@@ -70,6 +70,10 @@ pub enum DispaError {
     #[error("Rate limit exceeded: {message}")]
     RateLimit { message: String },
 
+    /// Payload too large
+    #[error("Payload too large: {message}")]
+    PayloadTooLarge { message: String },
+
     /// Internal server errors
     #[error("Internal server error: {message}")]
     Internal { message: String },
@@ -224,6 +228,7 @@ impl DispaError {
             DispaError::Timeout { .. } => ErrorSeverity::Medium,
             DispaError::Proxy { .. } => ErrorSeverity::Low,
             DispaError::RateLimit { .. } => ErrorSeverity::Low,
+            DispaError::PayloadTooLarge { .. } => ErrorSeverity::Low,
             DispaError::Internal { .. } => ErrorSeverity::High,
             DispaError::Tls { .. } => ErrorSeverity::High,
             DispaError::Io { .. } => ErrorSeverity::Medium,

@@ -16,12 +16,14 @@ mod plugins;
 mod retry;
 mod routing;
 mod tls;
+mod security;
 
 use config::{Config, ConfigManager};
 use crate::plugins::PluginEngine;
 use std::sync::Arc;
 use crate::proxy::http_client;
 use proxy::ProxyServer;
+use crate::monitoring::admin::{self, AdminState};
 
 #[derive(Parser)]
 #[command(name = "dispa")]
@@ -71,6 +73,18 @@ async fn main() -> Result<()> {
     let routing_handle = proxy_server.routing_engine_handle();
     let domain_handle = proxy_server.domain_config_handle();
     let plugins_handle = proxy_server.plugins_handle();
+    let security_handle = proxy_server.security_handle();
+
+    // Initialize admin state with accurate config path
+    admin::init_admin(AdminState{
+        config_path: std::path::PathBuf::from(&args.config),
+        domain_config: std::sync::Arc::clone(&domain_handle),
+        load_balancer: std::sync::Arc::clone(&lb_handle),
+        routing_engine: std::sync::Arc::clone(&routing_handle),
+        plugins: std::sync::Arc::clone(&plugins_handle),
+        security: std::sync::Arc::clone(&security_handle),
+    });
+    let security_handle = proxy_server.security_handle();
 
     // Cluster support removed
 
@@ -145,6 +159,20 @@ async fn main() -> Result<()> {
             };
             *plugins_handle_clone.write().await = engine;
             tracing::info!("Plugin engine reloaded from new config");
+        });
+
+        // Rebuild security manager
+        let security_cfg = cfg.security.clone();
+        // Avoid type inference issue by explicitly annotating the handle type
+        let security_handle_clone: std::sync::Arc<tokio::sync::RwLock<Option<crate::security::SecurityManager>>> =
+            std::sync::Arc::clone(&security_handle);
+        tokio::spawn(async move {
+            let mgr = match security_cfg {
+                Some(sc) => Some(crate::security::SecurityManager::new(sc)),
+                None => None,
+            };
+            *security_handle_clone.write().await = mgr;
+            tracing::info!("Security manager reloaded from new config");
         });
 
         // Restart monitoring server with new ports (best-effort)

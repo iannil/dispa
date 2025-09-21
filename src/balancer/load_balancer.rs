@@ -407,6 +407,11 @@ impl LoadBalancer {
         let mut index = self.current_index.write().await;
         *index = 0;
     }
+
+    #[cfg(test)]
+    pub fn health_checker(&self) -> &super::health_check::HealthChecker {
+        &self.health_checker
+    }
 }
 
 impl Drop for LoadBalancer {

@@ -491,9 +491,9 @@ mod tests {
 
     #[test]
     fn test_apply_before_domain_match_flag_kept() {
-        let engine = PluginEngine { request_plugins: vec![], response_plugins: vec![], apply_before_domain_match: false };
+        let engine = PluginEngine { request_plugins: vec![], response_plugins: vec![], apply_before_domain_match: false, request_index: std::collections::HashMap::new(), response_index: std::collections::HashMap::new() };
         assert_eq!(engine.apply_before_domain_match(), false);
-        let engine2 = PluginEngine { request_plugins: vec![], response_plugins: vec![], apply_before_domain_match: true };
+        let engine2 = PluginEngine { request_plugins: vec![], response_plugins: vec![], apply_before_domain_match: true, request_index: std::collections::HashMap::new(), response_index: std::collections::HashMap::new() };
         assert_eq!(engine2.apply_before_domain_match(), true);
     }
 }

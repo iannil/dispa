@@ -1,5 +1,6 @@
 use anyhow::Result;
 use hyper::service::{make_service_fn, service_fn};
+use hyper::server::conn::AddrStream;
 use hyper::Server;
 use std::convert::Infallible;
 use std::net::SocketAddr;
@@ -13,6 +14,7 @@ use crate::error::DispaResult;
 use crate::logger::TrafficLogger;
 use crate::routing::RoutingEngine;
 use crate::tls::TlsManager;
+use crate::security::{SecurityManager, SharedSecurity};
 use crate::plugins::{PluginEngine, SharedPluginEngine};
 
 pub struct ProxyServer {
@@ -24,6 +26,7 @@ pub struct ProxyServer {
     tls_manager: Option<TlsManager>,
     routing_engine: std::sync::Arc<tokio::sync::RwLock<Option<RoutingEngine>>>,
     plugins: SharedPluginEngine,
+    security: SharedSecurity,
 }
 
 impl ProxyServer {
@@ -72,6 +75,11 @@ impl ProxyServer {
             std::sync::Arc::new(tokio::sync::RwLock::new(None))
         };
 
+        // Initialize security manager if configured
+        let security = if let Some(sec_cfg) = &config.security {
+            std::sync::Arc::new(tokio::sync::RwLock::new(Some(SecurityManager::new(sec_cfg.clone()))))
+        } else { std::sync::Arc::new(tokio::sync::RwLock::new(None)) };
+
         let domain_config = std::sync::Arc::new(std::sync::RwLock::new(config.domains.clone()));
 
         Self {
@@ -83,6 +91,7 @@ impl ProxyServer {
             tls_manager,
             routing_engine,
             plugins,
+            security,
         }
     }
 
@@ -106,6 +115,7 @@ impl ProxyServer {
             self.traffic_logger.clone(),
             std::sync::Arc::clone(&self.routing_engine),
             std::sync::Arc::clone(&self.plugins),
+            std::sync::Arc::clone(&self.security),
         )
     }
 
@@ -126,11 +136,14 @@ impl ProxyServer {
     async fn run_http(self) -> Result<()> {
         let handler = self.create_handler();
 
-        let make_service = make_service_fn(move |_conn| {
+        let make_service = make_service_fn(move |conn: &AddrStream| {
             let handler = handler.clone();
+            let remote = conn.remote_addr();
             async move {
-                Ok::<_, Infallible>(service_fn(move |req| {
+                Ok::<_, Infallible>(service_fn(move |mut req| {
                     let handler = handler.clone();
+                    // Attach remote addr to request extensions
+                    req.extensions_mut().insert(remote);
                     async move { handler.handle_request(req).await }
                 }))
             }
@@ -159,11 +172,13 @@ impl ProxyServer {
 
         let handler = self.create_handler();
 
-        let make_service = make_service_fn(move |_conn| {
+        let make_service = make_service_fn(move |conn: &AddrStream| {
             let handler = handler.clone();
+            let remote = conn.remote_addr();
             async move {
-                Ok::<_, Infallible>(service_fn(move |req| {
+                Ok::<_, Infallible>(service_fn(move |mut req| {
                     let handler = handler.clone();
+                    req.extensions_mut().insert(remote);
                     async move { handler.handle_request(req).await }
                 }))
             }
@@ -203,6 +218,11 @@ impl ProxyServer {
     }
 
     #[allow(dead_code)]
+    pub fn security_handle(&self) -> SharedSecurity {
+        std::sync::Arc::clone(&self.security)
+    }
+
+    #[allow(dead_code)]
     pub fn domain_config_handle(
         &self,
     ) -> std::sync::Arc<std::sync::RwLock<crate::config::DomainConfig>> {
@@ -216,6 +236,7 @@ mod tests {
     use crate::config::{
         Config, DomainConfig, HealthCheckConfig, LoadBalancingConfig, LoadBalancingType,
         LoggingConfig, LoggingType, MonitoringConfig, ServerConfig, Target, TargetConfig,
+        HttpClientConfig,
     };
     use std::time::Duration;
 
@@ -270,10 +291,15 @@ mod tests {
                 enabled: false, // Disable for tests
                 metrics_port: 9090,
                 health_check_port: 8081,
+                histogram_buckets: None,
             },
             tls: None,     // TLS disabled for tests
             routing: None, // Routing disabled for tests
             cache: None,   // Cache disabled for tests
+            // Use small timeouts for tests to avoid long OS-level connect timeouts
+            http_client: Some(HttpClientConfig{ pool_max_idle_per_host: Some(8), pool_idle_timeout_secs: Some(30), connect_timeout_secs: Some(2) }),
+            plugins: None,
+            security: None,
         }
     }
 

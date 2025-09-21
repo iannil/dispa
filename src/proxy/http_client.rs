@@ -6,6 +6,10 @@ use once_cell::sync::Lazy;
 use std::sync::RwLock;
 use std::time::Duration;
 use crate::config::HttpClientConfig;
+use crate::error::{DispaError, DispaResult};
+use hyper::body::HttpBody as _;
+use bytes::Bytes;
+use tokio::sync::oneshot;
 
 /// Shared hyper client with connection pooling (HTTP/HTTPS via rustls)
 ///
@@ -15,12 +19,24 @@ use crate::config::HttpClientConfig;
 static SHARED_CLIENT: Lazy<RwLock<std::sync::Arc<Client<hyper_rustls::HttpsConnector<HttpConnector>, Body>>>> =
     Lazy::new(|| RwLock::new(std::sync::Arc::new(build_client(None))));
 
+// Request-level timeout for upstream calls (connect + first response byte)
+// Kept configurable via HttpClientConfig.connect_timeout_secs; defaults to 5s.
+static REQUEST_TIMEOUT_SECS: Lazy<RwLock<u64>> = Lazy::new(|| RwLock::new(5));
+
 /// Initialize or reinitialize the shared HTTP client with optional configuration.
 /// Safe to call multiple times; later calls will replace the client (best-effort hot-reload).
 pub fn init(config: Option<&HttpClientConfig>) {
     let new_client = std::sync::Arc::new(build_client(config));
     if let Ok(mut guard) = SHARED_CLIENT.write() {
         *guard = new_client;
+    }
+    // Update request timeout from config if provided
+    if let Some(c) = config {
+        if let Some(secs) = c.connect_timeout_secs {
+            if let Ok(mut g) = REQUEST_TIMEOUT_SECS.write() {
+                *g = secs.max(1);
+            }
+        }
     }
 }
 
@@ -69,8 +85,105 @@ fn build_client(config: Option<&HttpClientConfig>) -> Client<hyper_rustls::Https
 pub async fn forward(req: Request<Body>, target_base: &str) -> Result<Response<Body>> {
     let upstream_req = build_upstream_request(req, target_base)?;
     let client = get_client();
-    let upstream_res = client.request(upstream_req).await?;
+    // Enforce a request-level timeout to avoid tests hanging on blackholed connections
+    let timeout = {
+        let g = REQUEST_TIMEOUT_SECS.read().unwrap();
+        Duration::from_secs(*g)
+    };
+    let fut = client.request(upstream_req);
+    let upstream_res = tokio::time::timeout(timeout, fut)
+        .await
+        .map_err(|_| DispaError::timeout(timeout, "HTTP request"))??;
     Ok(build_downstream_response(upstream_res))
+}
+
+/// Forward with optional streaming body limit (does not aggregate the full body).
+/// If `limit` is set and `Content-Length` is present and exceeds the limit, returns PayloadTooLarge immediately.
+/// If `Content-Length` is absent, streams the body and aborts when limit is exceeded, mapping to PayloadTooLarge.
+pub async fn forward_with_limit(mut req: Request<Body>, target_base: &str, limit: Option<u64>) -> DispaResult<Response<Body>> {
+    if let Some(max) = limit {
+        if let Some(len) = req.headers().get(hyper::header::CONTENT_LENGTH).and_then(|v| v.to_str().ok()).and_then(|s| s.parse::<u64>().ok()) {
+            if len > max {
+                return Err(DispaError::PayloadTooLarge { message: format!("content-length {} exceeds limit {}", len, max) });
+            }
+        }
+    }
+
+    // Build upstream request parts first (we will replace body if limit enforced)
+    let base: Uri = target_base.parse().map_err(|e| DispaError::proxy(format!("invalid target url: {}", e)))?;
+    let (mut parts, orig_body) = req.into_parts();
+
+    let pq = parts.uri.path_and_query().map(|pq| pq.as_str().to_string()).unwrap_or_else(|| "/".to_string());
+    let scheme = base.scheme_str().unwrap_or("http");
+    let authority = base.authority().ok_or_else(|| DispaError::proxy(format!("target URI missing authority: {}", target_base)))?;
+    let new_uri: Uri = format!("{}://{}{}", scheme, authority, pq).parse().map_err(|e| DispaError::proxy(format!("invalid upstream uri: {}", e)))?;
+    parts.uri = new_uri;
+    strip_hop_by_hop_headers(&mut parts.headers);
+    parts.headers.insert(hyper::header::HOST, authority.as_str().parse().map_err(|e| DispaError::proxy(format!("bad host header: {}", e)))?);
+    parts.headers.entry("x-forwarded-proto").or_insert_with(|| if scheme == "https" { hyper::header::HeaderValue::from_static("https") } else { hyper::header::HeaderValue::from_static("http") });
+    parts.headers.entry("x-forwarded-for").or_insert_with(|| hyper::header::HeaderValue::from_static("127.0.0.1"));
+
+    let client = get_client();
+
+    if let Some(max) = limit {
+        // Wrap body with a streaming limiter
+        let (mut tx, body) = Body::channel();
+        let (signal_tx, mut signal_rx) = oneshot::channel::<()>();
+        let mut b = orig_body;
+        tokio::spawn(async move {
+            let mut sent: u64 = 0;
+            let mut chunks: u64 = 0;
+            let labels = [("limited", "true".to_string())];
+            loop {
+                match b.data().await {
+                    Some(Ok(chunk)) => {
+                        sent += chunk.len() as u64;
+                        chunks += 1;
+                        metrics::counter!("dispa_request_body_stream_chunks_total", &labels).increment(1);
+                        metrics::counter!("dispa_request_body_stream_bytes_total", &labels).increment(chunk.len() as u64);
+                        if sent > max {
+                            // exceed: drop sender and notify
+                            metrics::counter!("dispa_security_denied_total", &[("kind", "body_stream_too_large".to_string())]).increment(1);
+                            let _ = signal_tx.send(());
+                            tx.abort();
+                            break;
+                        }
+                        if let Err(_e) = tx.send_data(chunk).await { break; }
+                    }
+                    Some(Err(_e)) => { let _ = tx.abort(); break; }
+                    None => { break; }
+                }
+            }
+        });
+
+        let upstream_req = Request::from_parts(parts, body);
+        let fut = client.request(upstream_req);
+        let timeout = { let g = REQUEST_TIMEOUT_SECS.read().unwrap(); Duration::from_secs(*g) };
+        tokio::select! {
+            _ = &mut signal_rx => {
+                // limit exceeded
+                return Err(DispaError::PayloadTooLarge { message: "streamed body exceeded limit".into() });
+            }
+            res = tokio::time::timeout(timeout, fut) => {
+                let upstream_res = match res {
+                    Ok(Ok(r)) => r,
+                    Ok(Err(e)) => return Err(DispaError::from(e)),
+                    Err(_) => return Err(DispaError::timeout(timeout, "HTTP request")),
+                };
+                return Ok(build_downstream_response(upstream_res));
+            }
+        }
+    } else {
+        // No limit: use original body
+        let upstream_req = Request::from_parts(parts, orig_body);
+        let timeout = { let g = REQUEST_TIMEOUT_SECS.read().unwrap(); Duration::from_secs(*g) };
+        let fut = client.request(upstream_req);
+        let upstream_res = tokio::time::timeout(timeout, fut)
+            .await
+            .map_err(|_| DispaError::timeout(timeout, "HTTP request"))?
+            .map_err(|e| DispaError::from(e))?;
+        Ok(build_downstream_response(upstream_res))
+    }
 }
 
 /// Lightweight GET that returns only status code. Request-level timeout is enforced.
@@ -188,5 +301,25 @@ fn strip_hop_by_hop_headers(headers: &mut hyper::HeaderMap) {
         for name in extra {
             headers.remove(name);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hyper::{Body, Request};
+
+    #[tokio::test]
+    async fn test_forward_with_limit_content_length_exceed() {
+        // Body of 20 bytes, limit = 10 -> pre-check rejects without network
+        let body = Body::from(vec![1u8; 20]);
+        let req = Request::builder()
+            .uri("http://localhost/")
+            .method(hyper::Method::POST)
+            .header(hyper::header::CONTENT_LENGTH, "20") // ensure early limit check
+            .body(body)
+            .unwrap();
+        let res = forward_with_limit(req, "http://127.0.0.1:9", Some(10)).await; // bogus target, should not be used
+        assert!(matches!(res, Err(crate::error::DispaError::PayloadTooLarge { .. })));
     }
 }

@@ -1,5 +1,6 @@
 pub mod health;
 pub mod metrics;
+pub mod admin;
 
 use anyhow::Result;
 use tokio::task::JoinHandle;
@@ -28,6 +29,7 @@ mod tests {
             enabled: false,
             metrics_port: 9090,
             health_check_port: 8081,
+            histogram_buckets: None,
         };
 
         let result = start_metrics_server(config).await;
@@ -56,6 +58,7 @@ mod tests {
             enabled: true,
             metrics_port: 0, // Use port 0 for auto-assignment to avoid conflicts
             health_check_port: 0,
+            histogram_buckets: None,
         };
 
         let result = start_metrics_server(config).await;
@@ -97,16 +100,19 @@ mod tests {
                 enabled: true,
                 metrics_port: 9091,
                 health_check_port: 8082,
+                histogram_buckets: None,
             },
             MonitoringConfig {
                 enabled: true,
                 metrics_port: 9092,
                 health_check_port: 8083,
+                histogram_buckets: None,
             },
             MonitoringConfig {
                 enabled: false,
                 metrics_port: 9093,
                 health_check_port: 8084,
+                histogram_buckets: None,
             },
         ];
 
@@ -140,6 +146,7 @@ mod tests {
                 enabled: true,
                 metrics_port: 0, // Auto-assign to avoid conflicts
                 health_check_port: 0,
+                histogram_buckets: None,
             };
 
             let result = start_metrics_server(config).await;
@@ -183,6 +190,7 @@ mod tests {
             enabled: true,
             metrics_port: 0,
             health_check_port: 0,
+            histogram_buckets: None,
         };
 
         let handle = start_metrics_server(config).await.unwrap();

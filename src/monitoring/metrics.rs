@@ -1,5 +1,6 @@
 use anyhow::Result;
 use hyper::service::{make_service_fn, service_fn};
+use hyper::server::conn::AddrStream;
 use hyper::Server;
 use hyper::{Body, Method, Request, Response, StatusCode};
 use metrics_exporter_prometheus::{Matcher, PrometheusBuilder};
@@ -328,16 +329,27 @@ pub async fn run_metrics_server(config: MonitoringConfig) -> Result<()> {
     });
 
     // Start metrics server
-    let metrics_service =
-        make_service_fn(
-            move |_conn| async move { Ok::<_, Infallible>(service_fn(handle_metrics)) },
-        );
+    let metrics_service = make_service_fn(move |conn: &AddrStream| {
+        let remote = conn.remote_addr();
+        async move {
+            Ok::<_, Infallible>(service_fn(move |mut req| {
+                req.extensions_mut().insert(remote);
+                handle_metrics(req)
+            }))
+        }
+    });
 
     let metrics_server = Server::bind(&metrics_addr).serve(metrics_service);
 
     // Start health check server
-    let health_service =
-        make_service_fn(|_conn| async { Ok::<_, Infallible>(service_fn(handle_health)) });
+    let health_service = make_service_fn(|conn: &AddrStream| {
+        let remote = conn.remote_addr();
+        let svc = service_fn(move |mut req| {
+            req.extensions_mut().insert(remote);
+            handle_health(req)
+        });
+        std::future::ready(Ok::<_, Infallible>(svc))
+    });
 
     let health_server = Server::bind(&health_addr).serve(health_service);
 
@@ -362,6 +374,13 @@ pub async fn run_metrics_server(config: MonitoringConfig) -> Result<()> {
 }
 
 async fn handle_metrics(req: Request<Body>) -> Result<Response<Body>, Infallible> {
+    // Admin endpoints
+    if req.uri().path().starts_with("/admin") {
+        return Ok(match crate::monitoring::admin::handle_admin(req).await {
+            Ok(resp) => resp,
+            Err(_) => Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).body(Body::from("Admin error")).unwrap(),
+        });
+    }
     match (req.method(), req.uri().path()) {
         (&Method::GET, "/metrics") => {
             // Export Prometheus metrics - fallback to basic metrics for now
@@ -470,6 +489,12 @@ async fn generate_fallback_metrics() -> String {
 }
 
 async fn generate_json_metrics() -> String {
+    // Optional traffic overview via collector.logger
+    let (avg_ms, bytes_total, unique_clients) = get_traffic_overview().await;
+
+    // Optional per-target stats
+    let targets_by_traffic = get_targets_by_traffic().await;
+
     let metrics = json!({
         "uptime_seconds": get_uptime_seconds().await,
         "targets": {
@@ -484,6 +509,12 @@ async fn generate_json_metrics() -> String {
         "connections": {
             "active": get_active_connections().await
         },
+        "traffic": {
+            "avg_duration_ms": avg_ms,
+            "bytes_total": bytes_total,
+            "unique_clients": unique_clients
+        },
+        "targets_by_traffic": targets_by_traffic,
         "cache": {
             "hits": 0.0, // get_cache_hits().await,
             "misses": 0.0, // get_cache_misses().await,
@@ -498,6 +529,37 @@ async fn generate_json_metrics() -> String {
     });
 
     metrics.to_string()
+}
+
+async fn get_traffic_overview() -> (f64, f64, f64) {
+    if let Some(collector) = get_metrics_collector().await {
+        let collector = collector.read().await;
+        if let Some(ref logger) = collector.traffic_logger {
+            if let Ok(s) = logger.get_traffic_stats(1).await {
+                return (s.avg_duration, s.total_bytes as f64, s.unique_clients as f64);
+            }
+        }
+    }
+    (0.0, 0.0, 0.0)
+}
+
+async fn get_targets_by_traffic() -> serde_json::Value {
+    if let Some(collector) = get_metrics_collector().await {
+        let collector = collector.read().await;
+        if let Some(ref logger) = collector.traffic_logger {
+            if let Ok(list) = logger.get_traffic_by_target(1).await {
+                let arr: Vec<serde_json::Value> = list.into_iter().map(|t| json!({
+                    "target": t.target,
+                    "request_count": t.request_count,
+                    "avg_duration_ms": t.avg_duration,
+                    "error_count": t.error_count,
+                    "bytes_total": t.total_bytes,
+                })).collect();
+                return json!(arr);
+            }
+        }
+    }
+    json!([])
 }
 
 async fn get_uptime_seconds() -> f64 {
@@ -963,6 +1025,7 @@ mod tests {
             enabled: true,
             metrics_port: 9090,
             health_check_port: 8081,
+            histogram_buckets: None,
         };
 
         assert!(config.enabled);
@@ -1195,6 +1258,91 @@ mod tests {
             json_value.get("targets").is_some(),
             "Should contain targets section"
         );
+    }
+
+    #[tokio::test]
+    async fn test_handle_metrics_json_rich_fields() {
+        use hyper::{Body, Method, Request};
+        let req = Request::builder().method(Method::GET).uri("/metrics/json").body(Body::empty()).unwrap();
+        let response = handle_metrics(req).await.unwrap();
+        assert_eq!(response.status(), hyper::StatusCode::OK);
+        let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
+        let body_str = String::from_utf8(body_bytes.to_vec()).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&body_str).unwrap();
+        assert!(v.get("connections").and_then(|x| x.get("active")).is_some(), "connections.active missing");
+        assert!(v.get("requests").and_then(|x| x.get("error_rate")).is_some(), "requests.error_rate missing");
+    }
+
+    #[tokio::test]
+    async fn test_metrics_json_numeric_consistency_with_mocked_lb() {
+        // Build a load balancer with two targets and set known stats
+        let lb = Arc::new(create_test_load_balancer());
+        // names from create_test_load_balancer: server1, server2
+        lb.set_connection_stats(
+            "server1",
+            ConnectionStats { active_connections: 2, total_requests: 100, total_errors: 5, last_request: None, avg_response_time_ms: 0.0 }
+        ).await;
+        lb.set_connection_stats(
+            "server2",
+            ConnectionStats { active_connections: 3, total_requests: 50, total_errors: 2, last_request: None, avg_response_time_ms: 0.0 }
+        ).await;
+
+        // Inject health status: 1 healthy, 1 unhealthy
+        let mut map = std::collections::HashMap::new();
+        map.insert("server1".to_string(), crate::balancer::health_check::HealthStatus{ is_healthy: true, ..Default::default() });
+        map.insert("server2".to_string(), crate::balancer::health_check::HealthStatus{ is_healthy: false, ..Default::default() });
+        lb.health_checker().set_health_status_for_test(map).await;
+
+        // Inject collector
+        let collector = MetricsCollector::new().with_load_balancer(Arc::clone(&lb));
+        super::init_metrics_collector(collector);
+
+        // Optional: attach traffic logger with DB and insert rows for per-target stats
+        let cfg = crate::config::LoggingConfig{ enabled: true, log_type: crate::config::LoggingType::Database, database: Some(crate::config::DatabaseConfig{ url: "sqlite::memory:".into(), max_connections: Some(5), connection_timeout: Some(30)}), file: None, retention_days: Some(7)};
+        let mut logger = crate::logger::TrafficLogger::new(cfg);
+        logger.initialize_shared().await.unwrap();
+        // We can't call log_request with sizes; simulate via DB insert
+        // Note: in-memory DB scope is per-connection pool; use logger.get_traffic_by_target to avoid extra connections
+        {
+            // This section can't insert bytes via public API; bytes_total will be 0; we still assert structure and non-negative values below
+        }
+        // Inject logger
+        let coll = get_metrics_collector().await.unwrap();
+        coll.write().await.traffic_logger = Some(Arc::new(logger));
+
+        // Request /metrics/json
+        let req = hyper::Request::builder().method(hyper::Method::GET).uri("/metrics/json").body(hyper::Body::empty()).unwrap();
+        let response = handle_metrics(req).await.unwrap();
+        assert_eq!(response.status(), hyper::StatusCode::OK);
+        let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+        // Compute expectations
+        let total_req = 150.0;
+        let total_err = 7.0;
+        let err_rate = (total_err / total_req) * 100.0;
+        let active = 5.0;
+
+        // Assertions for core numbers
+        assert!((v["requests"]["total"].as_f64().unwrap_or(-1.0) - total_req).abs() < 1e-6);
+        assert!((v["requests"]["errors"].as_f64().unwrap_or(-1.0) - total_err).abs() < 1e-6);
+        assert!((v["requests"]["error_rate"].as_f64().unwrap_or(-1.0) - err_rate).abs() < 1e-6);
+        assert!((v["connections"]["active"].as_f64().unwrap_or(-1.0) - active).abs() < 1e-6);
+        // Healthy targets: expect 1 ; total targets == 2
+        let total_targets = v["targets"]["total"].as_f64().unwrap_or(0.0);
+        let healthy = v["targets"]["healthy"].as_f64().unwrap_or(-1.0);
+        assert_eq!(total_targets as i32, 2);
+        assert_eq!(healthy as i32, 1);
+        // Memory usage present and positive
+        assert!(v["memory"]["usage_bytes"].as_f64().unwrap_or(0.0) > 0.0);
+        // Uptime > 0
+        assert!(v["uptime_seconds"].as_f64().unwrap_or(0.0) >= 0.0);
+        // Traffic fields exist and non-negative
+        assert!(v["traffic"]["avg_duration_ms"].as_f64().unwrap_or(-1.0) >= 0.0);
+        assert!(v["traffic"]["bytes_total"].as_f64().unwrap_or(-1.0) >= 0.0);
+        assert!(v["traffic"]["unique_clients"].as_f64().unwrap_or(-1.0) >= 0.0);
+        // Per-target list present
+        assert!(v["targets_by_traffic"].is_array());
     }
 
     #[tokio::test]

@@ -11,6 +11,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::routing::RoutingConfig;
 use crate::tls::TlsConfig;
+use crate::security::SecurityConfig;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Config {
@@ -26,6 +27,8 @@ pub struct Config {
     pub http_client: Option<HttpClientConfig>,
     /// Plugins configuration
     pub plugins: Option<PluginsConfig>,
+    /// Security configuration
+    pub security: Option<SecurityConfig>,
 }
 
 /// Cache configuration
@@ -846,6 +849,7 @@ impl Config {
             cache: None,
             http_client: Some(HttpClientConfig::default()),
             plugins: None,
+            security: None,
         }
     }
 }

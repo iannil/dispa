@@ -519,7 +519,7 @@ impl RoutingEngine {
             Some(PluginOrder::NameDesc) => v.sort_by(|a, b| b.cmp(a)),
             _ => {}
         }
-        if dedup.copied().unwrap_or(false) {
+        if dedup.clone().unwrap_or(false) {
             let mut seen = std::collections::HashSet::new();
             v.retain(|n| seen.insert(n.clone()));
         }
@@ -1110,6 +1110,10 @@ mod tests {
                     response_transform: None,
                     custom_response: None,
                 },
+                plugins_request: None,
+                plugins_response: None,
+                plugins_order: None,
+                plugins_dedup: None,
                 target: "api-backend".to_string(),
                 enabled: true,
             }],
@@ -1303,6 +1307,10 @@ mod tests {
                     response_transform: None,
                     custom_response: None,
                 },
+                plugins_request: None,
+                plugins_response: None,
+                plugins_order: None,
+                plugins_dedup: None,
                 target: "user-backend".to_string(),
                 enabled: true,
             }],
@@ -1366,6 +1374,10 @@ mod tests {
                     request_transform: None,
                     response_transform: None,
                 },
+                plugins_request: None,
+                plugins_response: None,
+                plugins_order: None,
+                plugins_dedup: None,
                 target: "none".to_string(),
                 enabled: true,
             }],

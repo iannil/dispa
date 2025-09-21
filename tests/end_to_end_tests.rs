@@ -1,7 +1,7 @@
 use dispa::balancer::LoadBalancer;
 use dispa::config::{
     Config, DomainConfig, FileConfig, HealthCheckConfig, LoadBalancingConfig, LoadBalancingType,
-    LoggingConfig, LoggingType, MonitoringConfig, ServerConfig, Target, TargetConfig,
+    LoggingConfig, LoggingType, MonitoringConfig, ServerConfig, Target, TargetConfig, HttpClientConfig,
 };
 use dispa::logger::TrafficLogger;
 use dispa::proxy::ProxyServer;
@@ -63,10 +63,14 @@ fn create_end_to_end_test_config(target_urls: Vec<String>) -> Config {
             enabled: false, // Disable for integration tests
             metrics_port: 9090,
             health_check_port: 8081,
+            histogram_buckets: None,
         },
         tls: None,
         routing: None,
         cache: None,
+        http_client: Some(HttpClientConfig{ pool_max_idle_per_host: Some(8), pool_idle_timeout_secs: Some(30), connect_timeout_secs: Some(2) }),
+        plugins: None,
+        security: None,
     }
 }
 
@@ -225,6 +229,9 @@ async fn test_different_load_balancing_algorithms() {
     for algorithm in algorithms {
         let mut config = create_end_to_end_test_config(target_urls.clone());
         config.targets.load_balancing.lb_type = algorithm.clone();
+        config.http_client = Some(dispa::config::HttpClientConfig{ pool_max_idle_per_host: Some(8), pool_idle_timeout_secs: Some(30), connect_timeout_secs: Some(2) });
+        config.plugins = None;
+        config.security = None;
 
         let load_balancer = LoadBalancer::new(config.targets.clone());
 
@@ -280,7 +287,7 @@ async fn test_logging_integration() {
             log_type: LoggingType::File,
             database: None,
             file: Some(FileConfig {
-                directory: "/tmp/dispa_integration_test_logs".to_string(),
+                directory: "target/test_logs/end_to_end".to_string(),
                 max_file_size: Some(1000000),
                 rotation: true,
             }),
@@ -297,6 +304,9 @@ async fn test_logging_integration() {
 
         let mut config = create_end_to_end_test_config(vec![backend.uri()]);
         config.logging = logging_config.clone();
+        config.http_client = None;
+        config.plugins = None;
+        config.security = None;
 
         let mut traffic_logger = TrafficLogger::new(config.logging.clone());
 
@@ -334,11 +344,13 @@ async fn test_monitoring_integration() {
             enabled: false,
             metrics_port: 9090,
             health_check_port: 8081,
+            histogram_buckets: None,
         },
         MonitoringConfig {
             enabled: true,
             metrics_port: 0,      // Auto-assign
             health_check_port: 0, // Auto-assign
+            histogram_buckets: None,
         },
     ];
 
@@ -351,6 +363,9 @@ async fn test_monitoring_integration() {
 
         let mut config = create_end_to_end_test_config(vec![backend.uri()]);
         config.monitoring = monitoring_config.clone();
+        config.http_client = None;
+        config.plugins = None;
+        config.security = None;
 
         // Test that configuration is properly set
         assert_eq!(config.monitoring.enabled, monitoring_config.enabled);
@@ -403,6 +418,9 @@ async fn test_configuration_validation_integration() {
     for (should_be_valid, target_urls, domains) in test_cases {
         let mut config = create_end_to_end_test_config(target_urls);
         config.domains.intercept_domains = domains;
+        config.http_client = None;
+        config.plugins = None;
+        config.security = None;
 
         let validation_result = config.validate();
 
@@ -435,7 +453,8 @@ async fn test_concurrent_component_creation() {
         .mount(&backend)
         .await;
 
-    let config = create_end_to_end_test_config(vec![backend.uri()]);
+    let mut config = create_end_to_end_test_config(vec![backend.uri()]);
+    config.http_client = Some(dispa::config::HttpClientConfig{ pool_max_idle_per_host: Some(8), pool_idle_timeout_secs: Some(30), connect_timeout_secs: Some(2) });
 
     let mut handles = Vec::new();
 

@@ -495,7 +495,8 @@ impl TrafficLogger {
                     target,
                     COUNT(*) as request_count,
                     AVG(duration_ms) as avg_duration,
-                    COUNT(CASE WHEN status_code >= 400 THEN 1 END) as error_count
+                    COUNT(CASE WHEN status_code >= 400 THEN 1 END) as error_count,
+                    SUM(COALESCE(request_size, 0) + COALESCE(response_size, 0)) as total_bytes
                 FROM traffic_logs
                 WHERE timestamp >= ?
                 GROUP BY target
@@ -513,6 +514,7 @@ impl TrafficLogger {
                     request_count: row.get("request_count"),
                     avg_duration: row.get::<Option<f64>, _>("avg_duration").unwrap_or(0.0),
                     error_count: row.get("error_count"),
+                    total_bytes: row.get::<i64, _>("total_bytes") as u64,
                 });
             }
 
@@ -692,6 +694,7 @@ pub struct TargetTrafficStats {
     pub request_count: i64,
     pub avg_duration: f64,
     pub error_count: i64,
+    pub total_bytes: u64,
 }
 
 #[cfg(test)]
@@ -924,7 +927,8 @@ mod tests {
         assert!(result.is_ok());
 
         // Verify data was written to database
-        if let Some(ref pool) = *logger.db_pool.read().unwrap() {
+        let pool_opt = { logger.db_pool.read().unwrap().clone() };
+        if let Some(ref pool) = pool_opt {
             let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM traffic_logs WHERE id = ?")
                 .bind(request_id.to_string())
                 .fetch_one(pool)
@@ -962,7 +966,8 @@ mod tests {
         assert!(result.is_ok());
 
         // Verify error was logged with error message
-        if let Some(ref pool) = logger.db_pool {
+        let pool_opt = { logger.db_pool.read().unwrap().clone() };
+        if let Some(ref pool) = pool_opt {
             let error_msg: String =
                 sqlx::query_scalar("SELECT error_message FROM traffic_logs WHERE id = ?")
                     .bind(request_id.to_string())
@@ -1001,7 +1006,8 @@ mod tests {
         assert!(result.is_ok());
 
         // Verify database logging
-        if let Some(ref pool) = logger.db_pool {
+        let pool_opt = { logger.db_pool.read().unwrap().clone() };
+        if let Some(ref pool) = pool_opt {
             let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM traffic_logs WHERE id = ?")
                 .bind(request_id.to_string())
                 .fetch_one(pool)
@@ -1099,8 +1105,9 @@ mod tests {
             assert!(result.is_ok());
         }
 
-        // Verify all requests were logged
-        if let Some(ref pool) = logger.db_pool {
+        // Verify all requests were logged (avoid holding lock across awaits)
+        let pool_opt = { logger.db_pool.read().unwrap().clone() };
+        if let Some(ref pool) = pool_opt {
             let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM traffic_logs WHERE host = ?")
                 .bind("multi.example.com")
                 .fetch_one(pool)
@@ -1162,7 +1169,8 @@ mod tests {
         }
 
         // Verify all requests were logged
-        if let Some(ref pool) = logger.db_pool {
+        let pool_opt = { logger.db_pool.read().unwrap().clone() };
+        if let Some(ref pool) = pool_opt {
             let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM traffic_logs WHERE host = ?")
                 .bind("concurrent.example.com")
                 .fetch_one(pool)
@@ -1200,7 +1208,8 @@ mod tests {
         assert!(result.is_ok());
 
         // Verify IPv6 address was logged correctly
-        if let Some(ref pool) = logger.db_pool {
+        let pool_opt = { logger.db_pool.read().unwrap().clone() };
+        if let Some(ref pool) = pool_opt {
             let client_ip: String =
                 sqlx::query_scalar("SELECT client_ip FROM traffic_logs WHERE id = ?")
                     .bind(request_id.to_string())
@@ -1349,7 +1358,8 @@ mod tests {
         }
 
         // Verify that all logs were written
-        if let Some(ref pool) = logger.db_pool {
+        let pool_opt = { logger.db_pool.read().unwrap().clone() };
+        if let Some(ref pool) = pool_opt {
             let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM traffic_logs")
                 .fetch_one(pool)
                 .await
