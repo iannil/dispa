@@ -179,10 +179,12 @@ impl ShutdownManager {
     }
 
     /// Start listening for shutdown signals
-    #[allow(dead_code)]
+    ///
+    /// - Unix: SIGTERM -> Graceful, SIGINT -> Immediate
+    /// - Non-Unix (Windows): CTRL+C -> Graceful
+    #[cfg(unix)]
     pub async fn listen_for_signals(self: Arc<Self>) -> DispaResult<()> {
         let manager = Arc::clone(&self);
-
         tokio::spawn(async move {
             let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate())
                 .expect("Failed to register SIGTERM handler");
@@ -204,7 +206,22 @@ impl ShutdownManager {
                 },
             }
         });
+        Ok(())
+    }
 
+    #[cfg(not(unix))]
+    pub async fn listen_for_signals(self: Arc<Self>) -> DispaResult<()> {
+        let manager = Arc::clone(&self);
+        tokio::spawn(async move {
+            if let Err(e) = signal::ctrl_c().await {
+                error!(error = %e, "Failed to install CTRL+C signal handler");
+                return;
+            }
+            info!("Received CTRL+C, initiating graceful shutdown");
+            if let Err(e) = manager.shutdown(ShutdownSignal::Graceful).await {
+                error!(error = %e, "Error during graceful shutdown");
+            }
+        });
         Ok(())
     }
 
