@@ -22,7 +22,7 @@ toml = "0.8"
 rustls-pemfile = "2.0"
 
 # Database and storage
-sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "sqlite", "chrono", "uuid", "tls-rustls"] }
+sqlx = { version = "0.8.2", default-features = false, features = ["runtime-tokio-rustls", "postgres", "sqlite", "chrono", "uuid", "tls-rustls"] }
 
 # Logging and monitoring
 tracing = "0.1"
