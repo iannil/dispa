@@ -25,6 +25,7 @@ pub struct ProxyHandler {
 }
 
 impl ProxyHandler {
+    #[cfg(test)]
     pub fn new(
         domain_config: std::sync::Arc<StdRwLock<DomainConfig>>,
         load_balancer: std::sync::Arc<tokio::sync::RwLock<LoadBalancer>>,
@@ -205,6 +206,32 @@ impl ProxyHandler {
             let target = match lb.get_target().await {
                 Some(target) => target,
                 None => {
+                    // No upstream. If a body-size limit is configured, opportunistically
+                    // enforce it here by checking content-length or consuming up to limit+1 bytes.
+                    let limit = { let guard = self.security.read().await; guard.as_ref().and_then(|s| s.max_body_bytes()) };
+                    if let Some(max) = limit {
+                        if let Some(len) = req.headers().get(hyper::header::CONTENT_LENGTH).and_then(|v| v.to_str().ok()).and_then(|s| s.parse::<u64>().ok()) {
+                            if len > max {
+                                return Ok(Response::builder().status(StatusCode::PAYLOAD_TOO_LARGE).body(Body::from("Payload too large")).unwrap());
+                            }
+                        } else {
+                            // Stream a small amount just to detect over-limit bodies
+                            let mut total: u64 = 0;
+                            let body = req.body_mut();
+                            while let Some(chunk) = hyper::body::HttpBody::data(body).await {
+                                match chunk {
+                                    Ok(c) => {
+                                        total += c.len() as u64;
+                                        if total > max {
+                                            return Ok(Response::builder().status(StatusCode::PAYLOAD_TOO_LARGE).body(Body::from("Payload too large")).unwrap());
+                                        }
+                                        if total >= max { break; }
+                                    }
+                                    Err(_) => break,
+                                }
+                            }
+                        }
+                    }
                     warn!("No healthy targets available");
                     return Ok(Response::builder()
                         .status(StatusCode::SERVICE_UNAVAILABLE)
@@ -225,11 +252,48 @@ impl ProxyHandler {
         let target = match lb.get_target_by_name(&target_name).await {
             Some(target) => target,
             None => {
+                // No such target (or unhealthy). Build a 503 response but still
+                // apply per-route/global response plugins so tests and users can
+                // rely on response-phase plugins regardless of upstream.
                 warn!("Target '{}' not found or not healthy", target_name);
-                return Ok(Response::builder()
+                let mut resp = Response::builder()
                     .status(StatusCode::SERVICE_UNAVAILABLE)
                     .body(Body::from("Service unavailable"))
-                    .unwrap());
+                    .unwrap();
+
+                // Apply per-route response plugin subset if any, then only global plugins not already applied
+                let mut route_resp_names: Option<Vec<String>> = None;
+                if let Some(decision) = &routing_decision {
+                    if let Some(plugin_names) = &decision.plugins_response {
+                        let prepared = crate::routing::RoutingEngine::prepare_plugin_names(
+                            plugin_names,
+                            &decision.plugins_order,
+                            &decision.plugins_dedup,
+                        );
+                        route_resp_names = Some(prepared.clone());
+                        let guard = self.plugins.read().await;
+                        if let Some(engine) = guard.as_ref() {
+                            engine.apply_response_subset(&prepared, &mut resp).await;
+                        }
+                    }
+                }
+
+                // Apply remaining global plugins only
+                let guard = self.plugins.read().await;
+                if let Some(engine) = guard.as_ref() {
+                    if let Some(route_names) = &route_resp_names {
+                        let all = engine.response_plugin_names();
+                        let route_set: std::collections::HashSet<_> = route_names.iter().cloned().collect();
+                        let remaining: Vec<String> = all.into_iter().filter(|n| !route_set.contains(n)).collect();
+                        if !remaining.is_empty() {
+                            engine.apply_response_subset(&remaining, &mut resp).await;
+                        }
+                    } else {
+                        engine.apply_response(&mut resp).await;
+                    }
+                }
+
+                return Ok(resp);
             }
         };
 
@@ -272,6 +336,7 @@ impl ProxyHandler {
         };
 
         // Apply per-route response plugins (subset by name) before global plugins
+        let mut route_resp_names: Option<Vec<String>> = None;
         if let Some(decision) = &routing_decision {
             if let Some(plugin_names) = &decision.plugins_response {
                 let prepared = crate::routing::RoutingEngine::prepare_plugin_names(
@@ -279,6 +344,7 @@ impl ProxyHandler {
                     &decision.plugins_order,
                     &decision.plugins_dedup,
                 );
+                route_resp_names = Some(prepared.clone());
                 let guard = self.plugins.read().await;
                 if let Some(engine) = guard.as_ref() {
                     engine.apply_response_subset(&prepared, &mut final_response).await;
@@ -286,10 +352,22 @@ impl ProxyHandler {
             }
         }
 
-        // Plugins: response phase
+        // Plugins: response phase (global). If route-specific response plugins were applied,
+        // do not re-run those names again; only apply global-only plugins.
         {
             let guard = self.plugins.read().await;
-            if let Some(engine) = guard.as_ref() { engine.apply_response(&mut final_response).await; }
+            if let Some(engine) = guard.as_ref() {
+                if let Some(route_names) = &route_resp_names {
+                    let all = engine.response_plugin_names();
+                    let route_set: std::collections::HashSet<_> = route_names.iter().cloned().collect();
+                    let remaining: Vec<String> = all.into_iter().filter(|n| !route_set.contains(n)).collect();
+                    if !remaining.is_empty() {
+                        engine.apply_response_subset(&remaining, &mut final_response).await;
+                    }
+                } else {
+                    engine.apply_response(&mut final_response).await;
+                }
+            }
         }
 
         let status = final_response.status();
@@ -385,6 +463,7 @@ impl ProxyHandler {
     }
 }
 
+#[cfg(test)]
 fn is_hop_by_hop_header(name: &str) -> bool {
     matches!(
         name.to_lowercase().as_str(),
@@ -514,7 +593,7 @@ mod tests {
             PluginConfig{ name: "AResp".into(), plugin_type: PluginType::HeaderInjector, enabled: true, stage: PluginStage::Response, config: Some(serde_json::json!({"response_headers": {"x-order": "A"}})), error_strategy: PluginErrorStrategy::Continue },
             PluginConfig{ name: "BResp".into(), plugin_type: PluginType::HeaderInjector, enabled: true, stage: PluginStage::Response, config: Some(serde_json::json!({"response_headers": {"x-order": "B"}})), error_strategy: PluginErrorStrategy::Continue },
         ]};
-        let engine = PluginEngine::new(&plugins_cfg).unwrap();
+        let _engine = PluginEngine::new(&plugins_cfg).unwrap();
 
         // Base routing engine; we will mutate per test case
         let mut base_rule = RoutingRule{
@@ -566,6 +645,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_streaming_body_under_limit_not_interrupted() {
+        // Ensure this test cannot hang indefinitely
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(10), async {
         use crate::config::*;
         // Security limit high enough so body passes
         let sec_cfg = crate::security::SecurityConfig{ enabled: true, access_control: None, auth: None, rate_limit: None, ddos: Some(crate::security::DdosConfig{ max_headers: None, max_header_bytes: None, max_body_bytes: Some(1024), require_content_length: Some(false) }), jwt: None };
@@ -579,15 +660,17 @@ mod tests {
         let lb_arc = std::sync::Arc::new(tokio::sync::RwLock::new(lb));
         let handler = ProxyHandler::new(domain_arc, lb_arc, traffic_logger).with_security(Some(sec_mgr));
 
-        // Small chunked body (16 bytes < 1024)
+        // Small chunked body (16 bytes < 1024). Send asynchronously to avoid blocking before handler starts.
         let (mut tx, body) = Body::channel();
-        tx.send_data(bytes::Bytes::from(vec![0u8; 8])).await.unwrap();
-        tx.send_data(bytes::Bytes::from(vec![0u8; 8])).await.unwrap();
-        drop(tx);
+        tokio::spawn(async move {
+            let _ = tx.send_data(bytes::Bytes::from(vec![0u8; 8])).await;
+            let _ = tx.send_data(bytes::Bytes::from(vec![0u8; 8])).await;
+        });
         let req = Request::builder().uri("http://localhost/").header(HOST, "example.com").method(hyper::Method::POST).body(body).unwrap();
         let resp = handler.handle_request(req).await.unwrap();
         // Not interrupted by 413; likely 503 due to no upstream targets
         assert_ne!(resp.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        }).await.expect("test_streaming_body_under_limit_not_interrupted timed out");
     }
 
     #[tokio::test]
@@ -614,6 +697,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_streaming_body_exceed_limit_413() {
+        // Ensure this test cannot hang indefinitely
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(10), async {
         use crate::config::*;
         // Build security with small max_body_bytes
         let sec_cfg = crate::security::SecurityConfig{ enabled: true, access_control: None, auth: None, rate_limit: None, ddos: Some(crate::security::DdosConfig{ max_headers: None, max_header_bytes: None, max_body_bytes: Some(10), require_content_length: Some(false) }), jwt: None };
@@ -628,18 +713,22 @@ mod tests {
         let lb_arc = std::sync::Arc::new(tokio::sync::RwLock::new(lb));
         let handler = ProxyHandler::new(domain_arc, lb_arc, traffic_logger).with_security(Some(sec_mgr));
 
-        // Build a chunked body exceeding limit
+        // Build a chunked body exceeding limit; send asynchronously
         let (mut tx, body) = Body::channel();
-        tx.send_data(bytes::Bytes::from(vec![0u8; 8])).await.unwrap();
-        tx.send_data(bytes::Bytes::from(vec![0u8; 8])).await.unwrap(); // total 16 > 10
-        drop(tx);
+        tokio::spawn(async move {
+            let _ = tx.send_data(bytes::Bytes::from(vec![0u8; 8])).await;
+            let _ = tx.send_data(bytes::Bytes::from(vec![0u8; 8])).await; // total 16 > 10
+        });
         let req = Request::builder().uri("http://localhost/").header(HOST, "example.com").method(hyper::Method::POST).body(body).unwrap();
         let resp = handler.handle_request(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        }).await.expect("test_streaming_body_exceed_limit_413 timed out");
     }
 
     #[tokio::test]
     async fn test_streaming_limit_aborts_upstream_connection() {
+        // Ensure this test cannot hang indefinitely
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(15), async {
         use hyper::service::{make_service_fn, service_fn};
         use hyper::{Server, Request as HRequest};
         use std::sync::{Arc as StdArc};
@@ -683,11 +772,12 @@ mod tests {
         let lb_arc = std::sync::Arc::new(tokio::sync::RwLock::new(lb));
         let handler = ProxyHandler::new(domain_arc, lb_arc, traffic_logger).with_security(Some(sec_mgr));
 
-        // Build chunked body of 8 + 8 bytes (limit 8 → exceed)
+        // Build chunked body of 8 + 8 bytes (limit 8 → exceed); send asynchronously
         let (mut tx, body) = Body::channel();
-        tx.send_data(bytes::Bytes::from(vec![0u8; 8])).await.unwrap();
-        tx.send_data(bytes::Bytes::from(vec![0u8; 8])).await.unwrap();
-        drop(tx);
+        tokio::spawn(async move {
+            let _ = tx.send_data(bytes::Bytes::from(vec![0u8; 8])).await;
+            let _ = tx.send_data(bytes::Bytes::from(vec![0u8; 8])).await;
+        });
         let req = Request::builder().uri("http://localhost/").header(HOST, "example.com").method(hyper::Method::POST).body(body).unwrap();
         let resp = handler.handle_request(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::PAYLOAD_TOO_LARGE);
@@ -698,6 +788,7 @@ mod tests {
         assert!(got <= 8, "upstream should receive at most one chunk before abort: got {}", got);
 
         server_handle.abort();
+        }).await.expect("test_streaming_limit_aborts_upstream_connection timed out");
     }
 
     fn create_handler_with_plugins(domain_config: DomainConfig, engine: Option<PluginEngine>) -> ProxyHandler {
@@ -732,7 +823,7 @@ mod tests {
     #[tokio::test]
     async fn test_plugins_apply_before_domain_check_true_short_circuit() {
         // Domain not intercepted, but plugin runs before domain check and blocks
-        let mut plugins_cfg = PluginsConfig { enabled: true, apply_before_domain_match: true, plugins: vec![
+        let plugins_cfg = PluginsConfig { enabled: true, apply_before_domain_match: true, plugins: vec![
             PluginConfig{ name: "blk".into(), plugin_type: PluginType::Blocklist, enabled: true, stage: PluginStage::Request, config: Some(serde_json::json!({"hosts":["no.intercept.com"]})), error_strategy: PluginErrorStrategy::Continue }
         ]};
         // Build plugin engine
@@ -1437,7 +1528,7 @@ mod tests {
             // Should not panic when creating handler with different configs
             let domain_arc = std::sync::Arc::new(std::sync::RwLock::new(domain_config.clone()));
             let lb_arc = std::sync::Arc::new(tokio::sync::RwLock::new(load_balancer));
-            let handler = ProxyHandler::new(domain_arc.clone(), lb_arc, traffic_logger);
+            let _handler = ProxyHandler::new(domain_arc.clone(), lb_arc, traffic_logger);
 
             // Verify the handler was created successfully by checking it accepts its own domains
             let cfg = domain_arc.read().unwrap();

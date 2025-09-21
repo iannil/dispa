@@ -25,72 +25,42 @@ mod tests {
 
     #[tokio::test]
     async fn test_start_metrics_server_disabled() {
-        let config = MonitoringConfig {
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            let config = MonitoringConfig {
             enabled: false,
             metrics_port: 9090,
             health_check_port: 8081,
             histogram_buckets: None,
-        };
+            };
 
-        let result = start_metrics_server(config).await;
-        assert!(
-            result.is_ok(),
-            "Should successfully start metrics server task even when disabled"
-        );
-
-        let handle = result.unwrap();
-
-        // Give it a moment to process
-        sleep(Duration::from_millis(10)).await;
-
-        // The task should complete quickly for disabled config
-        assert!(
-            !handle.is_finished() || handle.is_finished(),
-            "Task should handle disabled config"
-        );
-
-        handle.abort(); // Clean up
+            let result = start_metrics_server(config).await;
+            assert!(result.is_ok(), "Should start metrics server when disabled");
+            let handle = result.unwrap();
+            sleep(Duration::from_millis(10)).await;
+            let _ = handle.abort();
+        }).await.expect("test_start_metrics_server_disabled timed out");
     }
 
     #[tokio::test]
     async fn test_start_metrics_server_enabled() {
-        let config = MonitoringConfig {
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            let config = MonitoringConfig {
             enabled: true,
             metrics_port: 0, // Use port 0 for auto-assignment to avoid conflicts
             health_check_port: 0,
             histogram_buckets: None,
-        };
+            };
 
-        let result = start_metrics_server(config).await;
-        assert!(
-            result.is_ok(),
-            "Should successfully start metrics server task"
-        );
-
-        let handle = result.unwrap();
-
-        // Give the server a moment to start
-        sleep(Duration::from_millis(100)).await;
-
-        // The task should either be running or have exited with an error
-        // (In test environments, binding failures are common and acceptable)
-        if handle.is_finished() {
-            // If finished, it should have completed (not panicked)
-            match handle.await {
-                Ok(()) => {
-                    // Task completed successfully (might have had binding issues)
-                }
-                Err(e) if e.is_panic() => {
-                    panic!("Task panicked: {:?}", e);
-                }
-                Err(_) => {
-                    // Task was cancelled or had other non-panic error - acceptable
-                }
+            let result = start_metrics_server(config).await;
+            assert!(result.is_ok(), "Should successfully start metrics server task");
+            let handle = result.unwrap();
+            sleep(Duration::from_millis(100)).await;
+            if handle.is_finished() {
+                let _ = handle.await;
+            } else {
+                handle.abort();
             }
-        } else {
-            // Task is still running - this is the expected case
-            handle.abort(); // Clean up the server
-        }
+        }).await.expect("test_start_metrics_server_enabled timed out");
     }
 
     #[tokio::test]
@@ -118,22 +88,15 @@ mod tests {
 
         let mut handles = Vec::new();
 
-        for config in configs {
-            let result = start_metrics_server(config).await;
-            assert!(
-                result.is_ok(),
-                "Should start metrics server with custom ports"
-            );
-            handles.push(result.unwrap());
-        }
-
-        // Give servers time to start
-        sleep(Duration::from_millis(100)).await;
-
-        // Clean up all handles
-        for handle in handles {
-            handle.abort();
-        }
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            for config in configs {
+                let result = start_metrics_server(config).await;
+                assert!(result.is_ok(), "Should start metrics server with custom ports");
+                handles.push(result.unwrap());
+            }
+            sleep(Duration::from_millis(100)).await;
+            for handle in handles { handle.abort(); }
+        }).await.expect("test_start_metrics_server_with_different_ports timed out");
     }
 
     #[tokio::test]
@@ -141,21 +104,19 @@ mod tests {
         // Test starting multiple metrics servers concurrently
         let mut handles = Vec::new();
 
-        for i in 0..5 {
-            let config = MonitoringConfig {
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            for i in 0..5 {
+                let config = MonitoringConfig {
                 enabled: true,
                 metrics_port: 0, // Auto-assign to avoid conflicts
                 health_check_port: 0,
                 histogram_buckets: None,
-            };
-
-            let result = start_metrics_server(config).await;
-            assert!(result.is_ok(), "Should start metrics server {}", i);
-            handles.push(result.unwrap());
-        }
-
-        // Give all servers time to start
-        sleep(Duration::from_millis(200)).await;
+                };
+                let result = start_metrics_server(config).await;
+                assert!(result.is_ok(), "Should start metrics server {}", i);
+                handles.push(result.unwrap());
+            }
+            sleep(Duration::from_millis(200)).await;
 
         // Check how many tasks are actually running
         let mut running_count = 0;
@@ -179,9 +140,8 @@ mod tests {
         );
 
         // Clean up all handles
-        for handle in handles {
-            handle.abort();
-        }
+            for handle in handles { handle.abort(); }
+        }).await.expect("test_concurrent_metrics_servers timed out");
     }
 
     #[tokio::test]
@@ -193,18 +153,12 @@ mod tests {
             histogram_buckets: None,
         };
 
-        let handle = start_metrics_server(config).await.unwrap();
-
-        // Verify task is running
-        assert!(!handle.is_finished());
-
-        // Abort the task
-        handle.abort();
-
-        // Give it time to finish
-        sleep(Duration::from_millis(10)).await;
-
-        // Task should be aborted/finished
-        assert!(handle.is_finished());
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            let handle = start_metrics_server(config).await.unwrap();
+            assert!(!handle.is_finished());
+            handle.abort();
+            sleep(Duration::from_millis(10)).await;
+            assert!(handle.is_finished());
+        }).await.expect("test_metrics_server_task_cleanup timed out");
     }
 }

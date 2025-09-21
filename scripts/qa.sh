@@ -82,11 +82,12 @@ run_check "Clippy linting (all warnings as errors)" "cargo clippy --all-targets 
 # 4. Basic cargo check
 run_check "Cargo check (debug)" "cargo check --verbose"
 
-# 5. Run tests
-run_check "Unit and integration tests" "cargo test --verbose"
+# 5. Run tests (with a hard timeout to avoid hangs)
+# Default timeout can be overridden via TEST_TIMEOUT_SECONDS env var
+run_check "Unit and integration tests (timed)" "python3 scripts/test_with_timeout.py --timeout ${TEST_TIMEOUT_SECONDS:-900} --cmd 'cargo test --workspace --all-targets --verbose'"
 
-# 6. Documentation tests
-run_check "Documentation tests" "cargo test --doc --verbose" "false"
+# 6. Documentation tests (timed)
+run_check "Documentation tests (timed)" "python3 scripts/test_with_timeout.py --timeout ${TEST_TIMEOUT_SECONDS:-900} --cmd 'cargo test --doc --verbose'" "false"
 
 # 7. Release build
 run_check "Release build" "cargo build --verbose --release"

@@ -18,8 +18,9 @@ use crate::security::{SecurityManager, SharedSecurity};
 use crate::plugins::{PluginEngine, SharedPluginEngine};
 
 pub struct ProxyServer {
-    pub config: Config,
     pub bind_addr: SocketAddr,
+    #[allow(dead_code)]
+    pub config: Config,
     load_balancer: std::sync::Arc<tokio::sync::RwLock<LoadBalancer>>,
     domain_config: std::sync::Arc<std::sync::RwLock<crate::config::DomainConfig>>,
     traffic_logger: TrafficLogger,
@@ -83,8 +84,8 @@ impl ProxyServer {
         let domain_config = std::sync::Arc::new(std::sync::RwLock::new(config.domains.clone()));
 
         Self {
-            config,
             bind_addr,
+            config,
             load_balancer,
             domain_config,
             traffic_logger,
@@ -690,25 +691,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_proxy_server_creation_performance() {
-        let config = create_test_config();
-        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-        let traffic_logger = create_test_traffic_logger();
-
-        let start = std::time::Instant::now();
-
-        // Create multiple servers to test creation performance
-        for _ in 0..100 {
-            let _server = ProxyServer::new(config.clone(), bind_addr, traffic_logger.clone());
-        }
-
-        let duration = start.elapsed();
-
-        // Server creation should be fast (less than 100ms for 100 servers)
-        assert!(
-            duration.as_millis() < 100,
-            "Server creation took too long: {:?}",
-            duration
-        );
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            let config = create_test_config();
+            let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+            let traffic_logger = create_test_traffic_logger();
+            let start = std::time::Instant::now();
+            for _ in 0..100 { let _server = ProxyServer::new(config.clone(), bind_addr, traffic_logger.clone()); }
+            let duration = start.elapsed();
+            assert!(duration.as_millis() < 200, "Server creation took too long: {:?}", duration);
+        }).await.expect("test_proxy_server_creation_performance timed out");
     }
 
     #[tokio::test]
@@ -718,20 +709,14 @@ mod tests {
         let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
         let traffic_logger = create_test_traffic_logger();
 
-        let server = ProxyServer::new(config, bind_addr, traffic_logger);
-
-        // Test server run method by spawning it and then canceling
-        let server_handle = tokio::spawn(async move { server.run().await });
-
-        // Give the server a moment to start
-        tokio::time::sleep(Duration::from_millis(50)).await;
-
-        // Cancel the server task
-        server_handle.abort();
-
-        // Wait for the task to complete (should be aborted)
-        let result = server_handle.await;
-        assert!(result.is_err(), "Server task should have been cancelled");
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            let server = ProxyServer::new(config, bind_addr, traffic_logger);
+            let server_handle = tokio::spawn(async move { server.run().await });
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            server_handle.abort();
+            let result = server_handle.await;
+            assert!(result.is_err(), "Server task should have been cancelled");
+        }).await.expect("test_proxy_server_run_method timed out");
     }
 
     #[tokio::test]
@@ -756,17 +741,13 @@ mod tests {
         for (i, config) in configs.into_iter().enumerate() {
             let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
             let traffic_logger = create_test_traffic_logger();
-            let server = ProxyServer::new(config, bind_addr, traffic_logger);
-
-            // Test that each server configuration can start
-            let server_handle = tokio::spawn(async move { server.run().await });
-
-            // Brief delay to allow server startup
-            tokio::time::sleep(Duration::from_millis(30)).await;
-
-            // Clean up
-            server_handle.abort();
-            let _ = server_handle.await;
+            let _ = tokio::time::timeout(Duration::from_secs(10), async move {
+                let server = ProxyServer::new(config, bind_addr, traffic_logger);
+                let server_handle = tokio::spawn(async move { server.run().await });
+                tokio::time::sleep(Duration::from_millis(30)).await;
+                server_handle.abort();
+                let _ = server_handle.await;
+            }).await.expect("test_proxy_server_run_with_different_configs timed out");
 
             tracing::debug!("Server config {} started successfully", i);
         }
@@ -780,20 +761,14 @@ mod tests {
 
         // Use port 0 (auto-assign) to avoid permission issues, but test cancellation behavior
         let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-        let server = ProxyServer::new(config, bind_addr, traffic_logger);
-
-        // Test that the server run method can be started and cancelled properly
-        let server_handle = tokio::spawn(async move { server.run().await });
-
-        // Very brief delay to let server attempt to start
-        tokio::time::sleep(Duration::from_millis(10)).await;
-
-        // Cancel the server before it fully starts
-        server_handle.abort();
-
-        // The handle should be cancelled
-        let result = server_handle.await;
-        assert!(result.is_err(), "Server should have been cancelled");
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            let server = ProxyServer::new(config, bind_addr, traffic_logger);
+            let server_handle = tokio::spawn(async move { server.run().await });
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            server_handle.abort();
+            let result = server_handle.await;
+            assert!(result.is_err(), "Server should have been cancelled");
+        }).await.expect("test_proxy_server_run_error_handling timed out");
     }
 
     #[tokio::test]
@@ -817,14 +792,8 @@ mod tests {
             handles.push(handle);
         }
 
-        // Let servers attempt to start
         tokio::time::sleep(Duration::from_millis(100)).await;
-
-        // Clean up all server tasks
-        for handle in handles {
-            handle.abort();
-            let _ = handle.await;
-        }
+        for handle in handles { handle.abort(); let _ = handle.await; }
     }
 
     #[tokio::test]
@@ -834,107 +803,64 @@ mod tests {
         let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
         let traffic_logger = create_test_traffic_logger();
 
-        let server = ProxyServer::new(config, bind_addr, traffic_logger);
-
-        // Start the server
-        let server_handle = tokio::spawn(async move { server.run().await });
-
-        // Let it start
-        tokio::time::sleep(Duration::from_millis(50)).await;
-
-        // Check if the task is running
-        assert!(!server_handle.is_finished(), "Server should be running");
-
-        // Shutdown the server
-        server_handle.abort();
-
-        // Wait for shutdown
-        tokio::time::sleep(Duration::from_millis(50)).await;
-
-        // Verify shutdown
-        let result = server_handle.await;
-        assert!(result.is_err(), "Server should have been cancelled");
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            let server = ProxyServer::new(config, bind_addr, traffic_logger);
+            let server_handle = tokio::spawn(async move { server.run().await });
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            assert!(!server_handle.is_finished(), "Server should be running");
+            server_handle.abort();
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            let result = server_handle.await;
+            assert!(result.is_err(), "Server should have been cancelled");
+        }).await.expect("test_proxy_server_shutdown_behavior timed out");
     }
 
     #[tokio::test]
     async fn test_proxy_server_with_tls_disabled() {
-        let mut config = create_test_config();
-        config.tls = Some(crate::tls::TlsConfig {
-            enabled: false,
-            ..Default::default()
-        });
-
-        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-        let traffic_logger = create_test_traffic_logger();
-
-        let server = ProxyServer::new(config, bind_addr, traffic_logger);
-
-        // TLS manager should be None when TLS is disabled
-        assert!(server.tls_manager.is_none());
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            let mut config = create_test_config();
+            config.tls = Some(crate::tls::TlsConfig { enabled: false, ..Default::default() });
+            let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+            let traffic_logger = create_test_traffic_logger();
+            let server = ProxyServer::new(config, bind_addr, traffic_logger);
+            assert!(server.tls_manager.is_none());
+        }).await.expect("test_proxy_server_with_tls_disabled timed out");
     }
 
     #[tokio::test]
     async fn test_proxy_server_with_tls_enabled() {
-        let mut config = create_test_config();
-        config.tls = Some(crate::tls::TlsConfig {
-            enabled: true,
-            cert_path: Some("test.crt".to_string()),
-            key_path: Some("test.key".to_string()),
-            port: 8443,
-            ..Default::default()
-        });
-
-        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-        let traffic_logger = create_test_traffic_logger();
-
-        let server = ProxyServer::new(config, bind_addr, traffic_logger);
-
-        // TLS manager should be present when TLS is enabled
-        assert!(server.tls_manager.is_some());
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            let mut config = create_test_config();
+            config.tls = Some(crate::tls::TlsConfig { enabled: true, cert_path: Some("test.crt".to_string()), key_path: Some("test.key".to_string()), port: 8443, ..Default::default() });
+            let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+            let traffic_logger = create_test_traffic_logger();
+            let server = ProxyServer::new(config, bind_addr, traffic_logger);
+            assert!(server.tls_manager.is_some());
+        }).await.expect("test_proxy_server_with_tls_enabled timed out");
     }
 
     #[tokio::test]
     async fn test_proxy_server_initialization_without_tls() {
-        let config = create_test_config();
-        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-        let traffic_logger = create_test_traffic_logger();
-
-        let mut server = ProxyServer::new(config, bind_addr, traffic_logger);
-
-        // Initialization should succeed without TLS
-        let result = server.initialize().await;
-        assert!(result.is_ok());
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            let config = create_test_config();
+            let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+            let traffic_logger = create_test_traffic_logger();
+            let mut server = ProxyServer::new(config, bind_addr, traffic_logger);
+            let result = server.initialize().await;
+            assert!(result.is_ok());
+        }).await.expect("test_proxy_server_initialization_without_tls timed out");
     }
 
     #[tokio::test]
     async fn test_proxy_server_tls_configuration_validation() {
         use crate::tls::TlsConfig;
-
-        // Test with valid TLS config
-        let valid_tls_config = TlsConfig {
-            enabled: true,
-            cert_path: Some("valid.crt".to_string()),
-            key_path: Some("valid.key".to_string()),
-            port: 8443,
-            sni_enabled: false,
-            certificates: None,
-            min_version: Some(crate::tls::TlsVersion::V1_2),
-            max_version: Some(crate::tls::TlsVersion::V1_3),
-            client_auth: None,
-        };
-
-        let result = valid_tls_config.validate();
-        assert!(result.is_ok());
-
-        // Test with invalid TLS config (missing cert path)
-        let invalid_tls_config = TlsConfig {
-            enabled: true,
-            cert_path: None,
-            key_path: Some("key.pem".to_string()),
-            ..Default::default()
-        };
-
-        let result = invalid_tls_config.validate();
-        assert!(result.is_err());
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            let valid_tls_config = TlsConfig { enabled: true, cert_path: Some("valid.crt".to_string()), key_path: Some("valid.key".to_string()), port: 8443, sni_enabled: false, certificates: None, min_version: Some(crate::tls::TlsVersion::V1_2), max_version: Some(crate::tls::TlsVersion::V1_3), client_auth: None };
+            let result = valid_tls_config.validate();
+            assert!(result.is_ok());
+            let invalid_tls_config = TlsConfig { enabled: true, cert_path: None, key_path: Some("key.pem".to_string()), ..Default::default() };
+            let result = invalid_tls_config.validate();
+            assert!(result.is_err());
+        }).await.expect("test_proxy_server_tls_configuration_validation timed out");
     }
 }

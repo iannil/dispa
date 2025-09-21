@@ -76,9 +76,10 @@ fn create_end_to_end_test_config(target_urls: Vec<String>) -> Config {
 
 #[tokio::test]
 async fn test_end_to_end_proxy_with_load_balancing() {
-    // Setup mock backend servers
-    let backend1 = MockServer::start().await;
-    let backend2 = MockServer::start().await;
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(20), async {
+        // Setup mock backend servers
+        let backend1 = MockServer::start().await;
+        let backend2 = MockServer::start().await;
 
     // Configure backend1 responses
     Mock::given(method("GET"))
@@ -121,14 +122,14 @@ async fn test_end_to_end_proxy_with_load_balancing() {
     let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
     let proxy_server = ProxyServer::new(config, bind_addr, traffic_logger);
 
-    // Verify proxy server configuration
-    assert_eq!(proxy_server.bind_addr, bind_addr);
+        assert_eq!(proxy_server.bind_addr, bind_addr);
+    }).await.expect("test_end_to_end_proxy_with_load_balancing timed out");
 }
 
 #[tokio::test]
 async fn test_domain_matching_integration() {
-    // Setup a single mock backend
-    let backend = MockServer::start().await;
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(20), async {
+        let backend = MockServer::start().await;
 
     Mock::given(method("GET"))
         .respond_with(ResponseTemplate::new(200).set_body_string("Success"))
@@ -153,14 +154,15 @@ async fn test_domain_matching_integration() {
         .intercept_domains
         .contains(&"*.api.example.com".to_string()));
     assert!(proxy_server.config.domains.wildcard_support);
-    assert!(proxy_server.config.domains.exclude_domains.is_some());
+        assert!(proxy_server.config.domains.exclude_domains.is_some());
+    }).await.expect("test_domain_matching_integration timed out");
 }
 
 #[tokio::test]
 async fn test_health_checking_integration() {
-    // Setup mock backends with different health statuses
-    let healthy_backend = MockServer::start().await;
-    let unhealthy_backend = MockServer::start().await;
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(20), async {
+        let healthy_backend = MockServer::start().await;
+        let unhealthy_backend = MockServer::start().await;
 
     // Healthy backend responds to health checks
     Mock::given(method("GET"))
@@ -199,15 +201,16 @@ async fn test_health_checking_integration() {
     // Test load balancer summary
     let summary = load_balancer.get_summary().await;
     assert_eq!(summary.total_targets, 2);
-    assert!(summary.healthy_targets <= 2); // May be 0-2 depending on timing
+        assert!(summary.healthy_targets <= 2);
+    }).await.expect("test_health_checking_integration timed out");
 }
 
 #[tokio::test]
 async fn test_different_load_balancing_algorithms() {
-    // Setup multiple mock backends
-    let backend1 = MockServer::start().await;
-    let backend2 = MockServer::start().await;
-    let backend3 = MockServer::start().await;
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(20), async {
+        let backend1 = MockServer::start().await;
+        let backend2 = MockServer::start().await;
+        let backend3 = MockServer::start().await;
 
     for backend in [&backend1, &backend2, &backend3] {
         Mock::given(method("GET"))
@@ -267,12 +270,13 @@ async fn test_different_load_balancing_algorithms() {
             );
         }
     }
+    }).await.expect("test_different_load_balancing_algorithms timed out");
 }
 
 #[tokio::test]
 async fn test_logging_integration() {
-    // Test traffic logger integration with different configurations
-    let logging_configs = vec![
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(20), async {
+        let logging_configs = vec![
         // Disabled logging
         LoggingConfig {
             enabled: false,
@@ -334,12 +338,13 @@ async fn test_logging_integration() {
             logging_config.log_type
         );
     }
+    }).await.expect("test_logging_integration timed out");
 }
 
 #[tokio::test]
 async fn test_monitoring_integration() {
-    // Test monitoring configuration integration
-    let monitoring_configs = vec![
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(20), async {
+        let monitoring_configs = vec![
         MonitoringConfig {
             enabled: false,
             metrics_port: 9090,
@@ -388,12 +393,13 @@ async fn test_monitoring_integration() {
             monitoring_config.enabled
         );
     }
+    }).await.expect("test_monitoring_integration timed out");
 }
 
 #[tokio::test]
 async fn test_configuration_validation_integration() {
-    // Test various configuration edge cases
-    let test_cases = vec![
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(20), async {
+        let test_cases = vec![
         // Valid minimal configuration
         (
             true,
@@ -415,7 +421,7 @@ async fn test_configuration_validation_integration() {
         (false, vec!["http://backend1.test".to_string()], vec![]),
     ];
 
-    for (should_be_valid, target_urls, domains) in test_cases {
+        for (should_be_valid, target_urls, domains) in test_cases {
         let mut config = create_end_to_end_test_config(target_urls);
         config.domains.intercept_domains = domains;
         config.http_client = None;
@@ -441,13 +447,14 @@ async fn test_configuration_validation_integration() {
                 "Configuration should be invalid"
             );
         }
-    }
+        }
+    }).await.expect("test_configuration_validation_integration timed out");
 }
 
 #[tokio::test]
 async fn test_concurrent_component_creation() {
-    // Test creating multiple proxy components concurrently
-    let backend = MockServer::start().await;
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(20), async {
+        let backend = MockServer::start().await;
     Mock::given(method("GET"))
         .respond_with(ResponseTemplate::new(200).set_body_string("Concurrent Test"))
         .mount(&backend)
@@ -478,20 +485,21 @@ async fn test_concurrent_component_creation() {
     }
 
     // Wait for all concurrent creations to complete
-    for handle in handles {
+        for handle in handles {
         let result = handle.await.unwrap();
         assert!(
             result.contains("created successfully"),
             "Concurrent creation failed: {}",
             result
         );
-    }
+        }
+    }).await.expect("test_concurrent_component_creation timed out");
 }
 
 #[tokio::test]
 async fn test_component_interaction_patterns() {
-    // Test how different components interact with each other
-    let backend = MockServer::start().await;
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(20), async {
+        let backend = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/health"))
         .respond_with(ResponseTemplate::new(200).set_body_string("OK"))
@@ -541,5 +549,6 @@ async fn test_component_interaction_patterns() {
     assert_eq!(proxy_server.config.targets.targets.len(), 1);
     assert!(!proxy_server.config.targets.health_check.enabled);
     assert!(!proxy_server.config.logging.enabled);
-    assert!(!proxy_server.config.monitoring.enabled);
+        assert!(!proxy_server.config.monitoring.enabled);
+    }).await.expect("test_component_interaction_patterns timed out");
 }

@@ -1,7 +1,7 @@
 use hyper::{Body, Request, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::net::{IpAddr, SocketAddr};
+use std::net::IpAddr;
 use std::time::Instant;
 use tokio::sync::RwLock;
 
@@ -205,7 +205,7 @@ impl SecurityManager {
                     }
                 }
                 // Split token
-                let (h_b64, p_b64, s_b64, header, payload, sig) = match decode_jwt_parts(token) { Some(t)=>t, None=>return false };
+                let (h_b64, p_b64, _s_b64, header, payload, sig) = match decode_jwt_parts(token) { Some(t)=>t, None=>return false };
                 // Verify alg
                 if header.get("alg").and_then(|v| v.as_str()).unwrap_or("") != "HS256" { return false; }
                 // Compute HMAC
@@ -226,7 +226,7 @@ impl SecurityManager {
                             if exp > std::time::Instant::now() { return true; }
                         }
                     }
-                    let (h_b64, p_b64, _s_b64, header, payload, sig) = match decode_jwt_parts(token) { Some(t)=>t, None=>return false };
+                let (h_b64, p_b64, _s_b64, header, payload, sig) = match decode_jwt_parts(token) { Some(t)=>t, None=>return false };
                     if header.get("alg").and_then(|v| v.as_str()).unwrap_or("") != "RS256" { return false; }
                     let kid = header.get("kid").and_then(|v| v.as_str()).map(|s| s.to_string());
                     // Resolve RSA key
@@ -288,12 +288,11 @@ fn rsa_verify_sha256(n_b64url: &str, e_b64url: &str, msg: &[u8], sig: &[u8]) -> 
 #[cfg(feature = "jwt-rs256")]
 struct JwkCacheEntry { key: RsaJwk, exp: std::time::Instant }
 
-#[cfg(feature = "jwt-rs256")]
-type JwksCache = tokio::sync::Mutex<HashMap<String, JwkCacheEntry>>;
+// Removed unused type alias to satisfy clippy when building all features
 
 #[cfg(feature = "jwt-rs256")]
 impl SecurityManager {
-    async fn fetch_jwks(&self, url: &str, ttl_secs: u64) -> HashMap<String, RsaJwk> {
+    async fn fetch_jwks(&self, url: &str, _ttl_secs: u64) -> HashMap<String, RsaJwk> {
         #[cfg(feature = "jwt-rs256-net")]
         {
             let mut map = HashMap::new();
@@ -334,8 +333,8 @@ async fn resolve_rs256_key(&self, cfg: &JwtConfig, kid: &Option<String>) -> Opti
         if let Some(url) = &cfg.jwks_url { let ttl = cfg.jwks_cache_secs.unwrap_or(600);
             // 1) Check cache
             if let Some(k) = kid {
-                if let Some(entry) = self.jwks_cache.lock().await.get(k).cloned() {
-                    if entry.exp > std::time::Instant::now() { return Some(entry.key); }
+                if let Some(entry) = self.jwks_cache.lock().await.get(k) {
+                    if entry.exp > std::time::Instant::now() { return Some(entry.key.clone()); }
                 }
             }
             // 2) Fetch JWKS and refresh cache
@@ -358,6 +357,40 @@ fn headers_size(req: &Request<Body>) -> usize {
         if let Ok(s) = v.to_str() { n += s.len(); }
     }
     n
+}
+
+// Minimal base64 encoder (used by tests/JWT helpers). Keep before test module to satisfy clippy.
+#[cfg(test)]
+fn base64_encode(data: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity((data.len().div_ceil(3)) * 4);
+    let mut i = 0;
+    while i + 3 <= data.len() {
+        let n = ((data[i] as u32) << 16) | ((data[i + 1] as u32) << 8) | (data[i + 2] as u32);
+        out.push(TABLE[((n >> 18) & 63) as usize] as char);
+        out.push(TABLE[((n >> 12) & 63) as usize] as char);
+        out.push(TABLE[((n >> 6) & 63) as usize] as char);
+        out.push(TABLE[(n & 63) as usize] as char);
+        i += 3;
+    }
+    match data.len() - i {
+        1 => {
+            let n = (data[i] as u32) << 16;
+            out.push(TABLE[((n >> 18) & 63) as usize] as char);
+            out.push(TABLE[((n >> 12) & 63) as usize] as char);
+            out.push('=');
+            out.push('=');
+        }
+        2 => {
+            let n = ((data[i] as u32) << 16) | ((data[i + 1] as u32) << 8);
+            out.push(TABLE[((n >> 18) & 63) as usize] as char);
+            out.push(TABLE[((n >> 12) & 63) as usize] as char);
+            out.push(TABLE[((n >> 6) & 63) as usize] as char);
+            out.push('=');
+        }
+        _ => {}
+    }
+    out
 }
 
 fn ip_match(pattern: &str, ip: &IpAddr) -> bool {
@@ -466,6 +499,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ddos_header_limits() {
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
         let cfg = SecurityConfig{
             enabled: true,
             access_control: None,
@@ -486,6 +520,7 @@ mod tests {
         let out = mgr.check_request(&req, None).await;
         assert!(out.is_some());
         assert_eq!(out.unwrap().status(), StatusCode::REQUEST_HEADER_FIELDS_TOO_LARGE);
+        }).await.expect("test_ddos_header_limits timed out");
     }
 
     #[test]
@@ -502,6 +537,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_jwt_hs256_validation() {
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
         // Build minimal HS256 JWT: header {alg:HS256,typ:JWT}, payload with exp far future
         let header = b"{\"alg\":\"HS256\",\"typ\":\"JWT\"}";
         let payload = format!("{{\"iss\":\"me\",\"aud\":\"you\",\"exp\":{}}}", 32503680000u64); // year 3000
@@ -525,10 +561,12 @@ mod tests {
         let req = Request::builder().uri("/").header("authorization", format!("Bearer {}", token)).body(Body::empty()).unwrap();
         let out = mgr.check_request(&req, None).await;
         assert!(out.is_none());
+        }).await.expect("test_jwt_hs256_validation timed out");
     }
 
     #[tokio::test]
     async fn test_jwt_claims_issuer_audience_leeway() {
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
         // Build HS256 token with iat in near future but within leeway
         let header = b"{\"alg\":\"HS256\",\"typ\":\"JWT\"}";
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
@@ -554,37 +592,8 @@ mod tests {
         let token2 = format!("{}.{}", signing_input2, b64url_enc(&sig2));
         let req2 = Request::builder().uri("/").header("authorization", format!("Bearer {}", token2)).body(Body::empty()).unwrap();
         assert!(mgr.check_request(&req2, None).await.is_some());
+        }).await.expect("test_jwt_claims_issuer_audience_leeway timed out");
     }
 }
 
-// Minimal base64 encoder (standard alphabet), used in tests and JWT helpers
-fn base64_encode(data: &[u8]) -> String {
-    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity((data.len() + 2) / 3 * 4);
-    let mut i = 0;
-    while i + 3 <= data.len() {
-        let n = ((data[i] as u32) << 16) | ((data[i+1] as u32) << 8) | (data[i+2] as u32);
-        out.push(TABLE[((n >> 18) & 63) as usize] as char);
-        out.push(TABLE[((n >> 12) & 63) as usize] as char);
-        out.push(TABLE[((n >> 6) & 63) as usize] as char);
-        out.push(TABLE[(n & 63) as usize] as char);
-        i += 3;
-    }
-    match data.len() - i {
-        1 => {
-            let n = (data[i] as u32) << 16;
-            out.push(TABLE[((n >> 18) & 63) as usize] as char);
-            out.push(TABLE[((n >> 12) & 63) as usize] as char);
-            out.push('='); out.push('=');
-        }
-        2 => {
-            let n = ((data[i] as u32) << 16) | ((data[i+1] as u32) << 8);
-            out.push(TABLE[((n >> 18) & 63) as usize] as char);
-            out.push(TABLE[((n >> 12) & 63) as usize] as char);
-            out.push(TABLE[((n >> 6) & 63) as usize] as char);
-            out.push('=');
-        }
-        _ => {}
-    }
-    out
-}
+// (moved base64 helper above)

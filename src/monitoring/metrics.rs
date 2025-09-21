@@ -311,8 +311,18 @@ pub async fn run_metrics_server(config: MonitoringConfig) -> Result<()> {
     // Register custom metrics
     register_metrics();
 
-    let metrics_addr = SocketAddr::from(([0, 0, 0, 0], config.metrics_port));
-    let health_addr = SocketAddr::from(([0, 0, 0, 0], config.health_check_port));
+    // Bind strategy: if port is 0 (ephemeral, commonly used in tests), prefer loopback to avoid
+    // sandbox/environment restrictions; otherwise, bind to all interfaces as configured.
+    let metrics_addr = if config.metrics_port == 0 {
+        SocketAddr::from(([127, 0, 0, 1], 0))
+    } else {
+        SocketAddr::from(([0, 0, 0, 0], config.metrics_port))
+    };
+    let health_addr = if config.health_check_port == 0 {
+        SocketAddr::from(([127, 0, 0, 1], 0))
+    } else {
+        SocketAddr::from(([0, 0, 0, 0], config.health_check_port))
+    };
 
     // Start metrics collection loop
     tokio::spawn(async move {
@@ -861,58 +871,60 @@ mod tests {
 
     #[tokio::test]
     async fn test_metrics_collector_creation() {
-        let collector = MetricsCollector::new();
-
-        assert!(collector.load_balancer.is_none());
-        assert!(collector.traffic_logger.is_none());
-        assert!(collector.start_time.elapsed().as_millis() < 100); // Should be very recent
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            let collector = MetricsCollector::new();
+            assert!(collector.load_balancer.is_none());
+            assert!(collector.traffic_logger.is_none());
+            assert!(collector.start_time.elapsed().as_millis() < 100);
+        }).await.expect("test_metrics_collector_creation timed out");
     }
 
     #[tokio::test]
     async fn test_metrics_collector_with_load_balancer() {
-        let load_balancer = Arc::new(create_test_load_balancer());
-        let collector = MetricsCollector::new().with_load_balancer(Arc::clone(&load_balancer));
-
-        assert!(collector.load_balancer.is_some());
-        assert!(collector.traffic_logger.is_none());
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            let load_balancer = Arc::new(create_test_load_balancer());
+            let collector = MetricsCollector::new().with_load_balancer(Arc::clone(&load_balancer));
+            assert!(collector.load_balancer.is_some());
+            assert!(collector.traffic_logger.is_none());
+        }).await.expect("test_metrics_collector_with_load_balancer timed out");
     }
 
     #[tokio::test]
     async fn test_metrics_collector_with_traffic_logger() {
-        let traffic_logger = Arc::new(create_test_traffic_logger());
-        let collector = MetricsCollector::new().with_traffic_logger(Arc::clone(&traffic_logger));
-
-        assert!(collector.load_balancer.is_none());
-        assert!(collector.traffic_logger.is_some());
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            let traffic_logger = Arc::new(create_test_traffic_logger());
+            let collector = MetricsCollector::new().with_traffic_logger(Arc::clone(&traffic_logger));
+            assert!(collector.load_balancer.is_none());
+            assert!(collector.traffic_logger.is_some());
+        }).await.expect("test_metrics_collector_with_traffic_logger timed out");
     }
 
     #[tokio::test]
     async fn test_metrics_collector_with_both_components() {
-        let load_balancer = Arc::new(create_test_load_balancer());
-        let traffic_logger = Arc::new(create_test_traffic_logger());
-
-        let collector = MetricsCollector::new()
-            .with_load_balancer(Arc::clone(&load_balancer))
-            .with_traffic_logger(Arc::clone(&traffic_logger));
-
-        assert!(collector.load_balancer.is_some());
-        assert!(collector.traffic_logger.is_some());
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            let load_balancer = Arc::new(create_test_load_balancer());
+            let traffic_logger = Arc::new(create_test_traffic_logger());
+            let collector = MetricsCollector::new()
+                .with_load_balancer(Arc::clone(&load_balancer))
+                .with_traffic_logger(Arc::clone(&traffic_logger));
+            assert!(collector.load_balancer.is_some());
+            assert!(collector.traffic_logger.is_some());
+        }).await.expect("test_metrics_collector_with_both_components timed out");
     }
 
     #[tokio::test]
     async fn test_collect_metrics_basic() {
-        let collector = MetricsCollector::new();
-
-        // This should not panic and should complete
-        collector.collect_metrics().await;
-
-        // Verify uptime is reasonable (should be very small for new collector)
-        let uptime = collector.start_time.elapsed().as_secs();
-        assert!(uptime < 5, "Uptime should be very small for new collector");
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            let collector = MetricsCollector::new();
+            collector.collect_metrics().await;
+            let uptime = collector.start_time.elapsed().as_secs();
+            assert!(uptime < 5);
+        }).await.expect("test_collect_metrics_basic timed out");
     }
 
     #[tokio::test]
     async fn test_collect_metrics_with_load_balancer() {
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
         let load_balancer = Arc::new(create_test_load_balancer());
         let collector = MetricsCollector::new().with_load_balancer(Arc::clone(&load_balancer));
 
@@ -945,10 +957,12 @@ mod tests {
 
         // This should collect load balancer metrics without panicking
         collector.collect_metrics().await;
+        }).await.expect("test_collect_metrics_with_load_balancer timed out");
     }
 
     #[tokio::test]
     async fn test_collect_load_balancer_metrics() {
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
         let load_balancer = Arc::new(create_test_load_balancer());
         let collector = MetricsCollector::new().with_load_balancer(Arc::clone(&load_balancer));
 
@@ -977,50 +991,44 @@ mod tests {
         assert_eq!(summary.total_active_connections, 10);
         assert_eq!(summary.total_requests, 500);
         assert_eq!(summary.total_errors, 5);
+        }).await.expect("test_collect_load_balancer_metrics timed out");
     }
 
     #[tokio::test]
     async fn test_collect_system_metrics() {
-        let collector = MetricsCollector::new();
-
-        // Test system metrics collection (should not panic)
-        collector.collect_system_metrics();
-
-        // This method is internal and we mainly test it doesn't crash
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            let collector = MetricsCollector::new();
+            collector.collect_system_metrics();
+        }).await.expect("test_collect_system_metrics timed out");
     }
 
     #[tokio::test]
     async fn test_uptime_measurement() {
-        let collector = MetricsCollector::new();
-
-        // Wait a small amount of time
-        sleep(Duration::from_millis(10)).await;
-
-        let uptime_before = collector.start_time.elapsed();
-
-        // Wait a bit more
-        sleep(Duration::from_millis(10)).await;
-
-        let uptime_after = collector.start_time.elapsed();
-
-        // Verify uptime is increasing
-        assert!(uptime_after > uptime_before);
-        assert!(uptime_after.as_millis() >= 20); // At least 20ms passed
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            let collector = MetricsCollector::new();
+            sleep(Duration::from_millis(10)).await;
+            let uptime_before = collector.start_time.elapsed();
+            sleep(Duration::from_millis(10)).await;
+            let uptime_after = collector.start_time.elapsed();
+            assert!(uptime_after > uptime_before);
+            assert!(uptime_after.as_millis() >= 20);
+        }).await.expect("test_uptime_measurement timed out");
     }
 
     #[tokio::test]
     async fn test_record_request_metric() {
-        // Test the global request metric recording function
-        record_request_metric("GET", 200, Duration::from_millis(150), "backend1");
-        record_request_metric("POST", 500, Duration::from_millis(300), "backend2");
-        record_request_metric("PUT", 404, Duration::from_millis(50), "backend1");
-
-        // These calls should not panic and should record metrics
-        // The actual metric values are handled by the metrics crate
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            record_request_metric("GET", 200, Duration::from_millis(150), "backend1");
+            record_request_metric("POST", 500, Duration::from_millis(300), "backend2");
+            record_request_metric("PUT", 404, Duration::from_millis(50), "backend1");
+            // These calls should not panic and should record metrics
+            // The actual metric values are handled by the metrics crate
+        }).await.expect("test_record_request_metric timed out");
     }
 
     #[tokio::test]
     async fn test_monitoring_config_creation() {
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
         let config = MonitoringConfig {
             enabled: true,
             metrics_port: 9090,
@@ -1031,250 +1039,171 @@ mod tests {
         assert!(config.enabled);
         assert_eq!(config.metrics_port, 9090);
         assert_eq!(config.health_check_port, 8081);
+        }).await.expect("test_monitoring_config_creation timed out");
     }
 
     #[tokio::test]
     async fn test_clone_metrics_collector() {
-        let load_balancer = Arc::new(create_test_load_balancer());
-        let original = MetricsCollector::new().with_load_balancer(Arc::clone(&load_balancer));
-
-        let cloned = original.clone();
-
-        // Verify the clone has the same properties
-        assert!(cloned.load_balancer.is_some());
-        assert!(cloned.traffic_logger.is_none());
-
-        // Both should be able to collect metrics
-        original.collect_metrics().await;
-        cloned.collect_metrics().await;
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            let load_balancer = Arc::new(create_test_load_balancer());
+            let original = MetricsCollector::new().with_load_balancer(Arc::clone(&load_balancer));
+            let cloned = original.clone();
+            assert!(cloned.load_balancer.is_some());
+            assert!(cloned.traffic_logger.is_none());
+            original.collect_metrics().await;
+            cloned.collect_metrics().await;
+        }).await.expect("test_clone_metrics_collector timed out");
     }
 
     #[tokio::test]
     async fn test_metrics_collection_with_empty_stats() {
-        let load_balancer = Arc::new(create_test_load_balancer());
-        let collector = MetricsCollector::new().with_load_balancer(Arc::clone(&load_balancer));
-
-        // Test with no connection stats (empty state)
-        collector.collect_metrics().await;
-
-        let summary = load_balancer.get_summary().await;
-        assert_eq!(summary.total_targets, 2);
-        // When health checks are disabled, healthy_targets may be 0 initially
-        assert!(summary.healthy_targets <= 2);
-        assert_eq!(summary.total_active_connections, 0);
-        assert_eq!(summary.total_requests, 0);
-        assert_eq!(summary.total_errors, 0);
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            let load_balancer = Arc::new(create_test_load_balancer());
+            let collector = MetricsCollector::new().with_load_balancer(Arc::clone(&load_balancer));
+            collector.collect_metrics().await;
+            let summary = load_balancer.get_summary().await;
+            assert_eq!(summary.total_targets, 2);
+            assert!(summary.healthy_targets <= 2);
+            assert_eq!(summary.total_active_connections, 0);
+            assert_eq!(summary.total_requests, 0);
+            assert_eq!(summary.total_errors, 0);
+        }).await.expect("test_metrics_collection_with_empty_stats timed out");
     }
 
     #[tokio::test]
     async fn test_metrics_collection_performance() {
-        let load_balancer = Arc::new(create_test_load_balancer());
-        let traffic_logger = Arc::new(create_test_traffic_logger());
-
-        let collector = MetricsCollector::new()
-            .with_load_balancer(Arc::clone(&load_balancer))
-            .with_traffic_logger(Arc::clone(&traffic_logger));
-
-        // Add some test data
-        for i in 0..5 {
-            load_balancer
-                .set_connection_stats(
-                    &format!("server{}", i),
-                    ConnectionStats {
-                        active_connections: i as u32,
-                        total_requests: (i * 100) as u64,
-                        total_errors: i as u64,
-                        last_request: Some(std::time::Instant::now()),
-                        avg_response_time_ms: (i * 50) as f64,
-                    },
-                )
-                .await;
-        }
-
-        let start = std::time::Instant::now();
-
-        // Collect metrics multiple times
-        for _ in 0..10 {
-            collector.collect_metrics().await;
-        }
-
-        let duration = start.elapsed();
-
-        // Metrics collection should be reasonably fast
-        assert!(
-            duration.as_millis() < 1000,
-            "Metrics collection took too long: {:?}",
-            duration
-        );
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            let load_balancer = Arc::new(create_test_load_balancer());
+            let traffic_logger = Arc::new(create_test_traffic_logger());
+            let collector = MetricsCollector::new()
+                .with_load_balancer(Arc::clone(&load_balancer))
+                .with_traffic_logger(Arc::clone(&traffic_logger));
+            for i in 0..5 {
+                load_balancer
+                    .set_connection_stats(
+                        &format!("server{}", i),
+                        ConnectionStats {
+                            active_connections: i as u32,
+                            total_requests: (i * 100) as u64,
+                            total_errors: i as u64,
+                            last_request: Some(std::time::Instant::now()),
+                            avg_response_time_ms: (i * 50) as f64,
+                        },
+                    )
+                    .await;
+            }
+            let start = std::time::Instant::now();
+            for _ in 0..10 { collector.collect_metrics().await; }
+            let duration = start.elapsed();
+            assert!(duration.as_millis() < 1000, "Metrics collection took too long: {:?}", duration);
+        }).await.expect("test_metrics_collection_performance timed out");
     }
 
     #[tokio::test]
     async fn test_request_metric_recording_edge_cases() {
-        // Test various HTTP methods and status codes
-        let methods = ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"];
-        let status_codes = [200, 201, 301, 400, 401, 404, 500, 502, 503];
-        let durations = [
-            Duration::from_millis(1),
-            Duration::from_millis(100),
-            Duration::from_secs(1),
-            Duration::from_secs(5),
-        ];
-
-        for method in &methods {
-            for &status_code in &status_codes {
-                for &duration in &durations {
-                    record_request_metric(method, status_code, duration, "test_target");
-                }
-            }
-        }
-
-        // All calls should complete without panicking
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            let methods = ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"];
+            let status_codes = [200, 201, 301, 400, 401, 404, 500, 502, 503];
+            let durations = [Duration::from_millis(1), Duration::from_millis(100), Duration::from_secs(1), Duration::from_secs(5)];
+            for method in &methods { for &status_code in &status_codes { for &duration in &durations { record_request_metric(method, status_code, duration, "test_target"); } } }
+        }).await.expect("test_request_metric_recording_edge_cases timed out");
     }
 
     #[tokio::test]
     async fn test_concurrent_metrics_collection() {
-        let load_balancer = Arc::new(create_test_load_balancer());
-        let collector =
-            Arc::new(MetricsCollector::new().with_load_balancer(Arc::clone(&load_balancer)));
-
-        let mut handles = Vec::new();
-
-        // Spawn multiple concurrent metrics collection tasks
-        for i in 0..5 {
-            let collector_clone = Arc::clone(&collector);
-            let handle = tokio::spawn(async move {
-                for _ in 0..10 {
-                    collector_clone.collect_metrics().await;
-                    tokio::time::sleep(Duration::from_millis(1)).await;
-                }
-                i
-            });
-            handles.push(handle);
-        }
-
-        // Wait for all tasks to complete
-        for handle in handles {
-            let result = handle.await.unwrap();
-            assert!(result < 5);
-        }
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            let load_balancer = Arc::new(create_test_load_balancer());
+            let collector = Arc::new(MetricsCollector::new().with_load_balancer(Arc::clone(&load_balancer)));
+            let mut handles = Vec::new();
+            for i in 0..5 {
+                let collector_clone = Arc::clone(&collector);
+                let handle = tokio::spawn(async move {
+                    for _ in 0..10 {
+                        collector_clone.collect_metrics().await;
+                        tokio::time::sleep(Duration::from_millis(1)).await;
+                    }
+                    i
+                });
+                handles.push(handle);
+            }
+            for handle in handles {
+                let result = handle.await.unwrap();
+                assert!(result < 5);
+            }
+        }).await.expect("test_concurrent_metrics_collection timed out");
     }
 
     #[tokio::test]
     async fn test_metrics_collector_builder_pattern() {
-        let load_balancer = Arc::new(create_test_load_balancer());
-        let traffic_logger = Arc::new(create_test_traffic_logger());
-
-        // Test the builder pattern works correctly
-        let collector = MetricsCollector::new()
-            .with_load_balancer(Arc::clone(&load_balancer))
-            .with_traffic_logger(Arc::clone(&traffic_logger));
-
-        assert!(collector.load_balancer.is_some());
-        assert!(collector.traffic_logger.is_some());
-
-        // Test that the order doesn't matter
-        let collector2 = MetricsCollector::new()
-            .with_traffic_logger(Arc::clone(&traffic_logger))
-            .with_load_balancer(Arc::clone(&load_balancer));
-
-        assert!(collector2.load_balancer.is_some());
-        assert!(collector2.traffic_logger.is_some());
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            let load_balancer = Arc::new(create_test_load_balancer());
+            let traffic_logger = Arc::new(create_test_traffic_logger());
+            let collector = MetricsCollector::new()
+                .with_load_balancer(Arc::clone(&load_balancer))
+                .with_traffic_logger(Arc::clone(&traffic_logger));
+            assert!(collector.load_balancer.is_some());
+            assert!(collector.traffic_logger.is_some());
+            let collector2 = MetricsCollector::new()
+                .with_traffic_logger(Arc::clone(&traffic_logger))
+                .with_load_balancer(Arc::clone(&load_balancer));
+            assert!(collector2.load_balancer.is_some());
+            assert!(collector2.traffic_logger.is_some());
+        }).await.expect("test_metrics_collector_builder_pattern timed out");
     }
 
     #[tokio::test]
     async fn test_handle_metrics_prometheus_endpoint() {
-        use hyper::{Body, Method, Request};
-
-        // Test /metrics endpoint
-        let req = Request::builder()
-            .method(Method::GET)
-            .uri("/metrics")
-            .body(Body::empty())
-            .unwrap();
-
-        let response = handle_metrics(req).await.unwrap();
-
-        assert_eq!(response.status(), hyper::StatusCode::OK);
-        assert_eq!(
-            response.headers().get("content-type").unwrap(),
-            "text/plain; version=0.0.4"
-        );
-
-        // Check that response body is not empty
-        let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
-        let body_str = String::from_utf8(body_bytes.to_vec()).unwrap();
-        assert!(!body_str.is_empty(), "Metrics response should not be empty");
-        assert!(
-            body_str.contains("dispa_uptime_seconds"),
-            "Should contain uptime metric"
-        );
-        assert!(
-            body_str.contains("dispa_targets_healthy"),
-            "Should contain healthy targets metric"
-        );
-        assert!(
-            body_str.contains("dispa_requests_total"),
-            "Should contain requests metric"
-        );
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            use hyper::{Body, Method, Request};
+            let req = Request::builder().method(Method::GET).uri("/metrics").body(Body::empty()).unwrap();
+            let response = handle_metrics(req).await.unwrap();
+            assert_eq!(response.status(), hyper::StatusCode::OK);
+            assert_eq!(response.headers().get("content-type").unwrap(), "text/plain; version=0.0.4");
+            let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
+            let body_str = String::from_utf8(body_bytes.to_vec()).unwrap();
+            assert!(!body_str.is_empty());
+            assert!(body_str.contains("dispa_uptime_seconds"));
+            assert!(body_str.contains("dispa_targets_healthy"));
+            assert!(body_str.contains("dispa_requests_total"));
+        }).await.expect("test_handle_metrics_prometheus_endpoint timed out");
     }
 
     #[tokio::test]
     async fn test_handle_metrics_json_endpoint() {
-        use hyper::{Body, Method, Request};
-
-        // Test /metrics/json endpoint
-        let req = Request::builder()
-            .method(Method::GET)
-            .uri("/metrics/json")
-            .body(Body::empty())
-            .unwrap();
-
-        let response = handle_metrics(req).await.unwrap();
-
-        assert_eq!(response.status(), hyper::StatusCode::OK);
-        assert_eq!(
-            response.headers().get("content-type").unwrap(),
-            "application/json"
-        );
-
-        // Check that response body is valid JSON
-        let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
-        let body_str = String::from_utf8(body_bytes.to_vec()).unwrap();
-        assert!(
-            !body_str.is_empty(),
-            "JSON metrics response should not be empty"
-        );
-
-        // Parse as JSON to verify format
-        let json_value: serde_json::Value =
-            serde_json::from_str(&body_str).expect("Response should be valid JSON");
-
-        assert!(json_value.is_object(), "Response should be a JSON object");
-        assert!(
-            json_value.get("uptime_seconds").is_some(),
-            "Should contain uptime"
-        );
-        assert!(
-            json_value.get("targets").is_some(),
-            "Should contain targets section"
-        );
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            use hyper::{Body, Method, Request};
+            let req = Request::builder().method(Method::GET).uri("/metrics/json").body(Body::empty()).unwrap();
+            let response = handle_metrics(req).await.unwrap();
+            assert_eq!(response.status(), hyper::StatusCode::OK);
+            assert_eq!(response.headers().get("content-type").unwrap(), "application/json");
+            let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
+            let body_str = String::from_utf8(body_bytes.to_vec()).unwrap();
+            assert!(!body_str.is_empty());
+            let json_value: serde_json::Value = serde_json::from_str(&body_str).expect("Response should be valid JSON");
+            assert!(json_value.is_object());
+            assert!(json_value.get("uptime_seconds").is_some());
+            assert!(json_value.get("targets").is_some());
+        }).await.expect("test_handle_metrics_json_endpoint timed out");
     }
 
     #[tokio::test]
     async fn test_handle_metrics_json_rich_fields() {
-        use hyper::{Body, Method, Request};
-        let req = Request::builder().method(Method::GET).uri("/metrics/json").body(Body::empty()).unwrap();
-        let response = handle_metrics(req).await.unwrap();
-        assert_eq!(response.status(), hyper::StatusCode::OK);
-        let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
-        let body_str = String::from_utf8(body_bytes.to_vec()).unwrap();
-        let v: serde_json::Value = serde_json::from_str(&body_str).unwrap();
-        assert!(v.get("connections").and_then(|x| x.get("active")).is_some(), "connections.active missing");
-        assert!(v.get("requests").and_then(|x| x.get("error_rate")).is_some(), "requests.error_rate missing");
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            use hyper::{Body, Method, Request};
+            let req = Request::builder().method(Method::GET).uri("/metrics/json").body(Body::empty()).unwrap();
+            let response = handle_metrics(req).await.unwrap();
+            assert_eq!(response.status(), hyper::StatusCode::OK);
+            let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
+            let body_str = String::from_utf8(body_bytes.to_vec()).unwrap();
+            let v: serde_json::Value = serde_json::from_str(&body_str).unwrap();
+            assert!(v.get("connections").and_then(|x| x.get("active")).is_some());
+            assert!(v.get("requests").and_then(|x| x.get("error_rate")).is_some());
+        }).await.expect("test_handle_metrics_json_rich_fields timed out");
     }
 
     #[tokio::test]
     async fn test_metrics_json_numeric_consistency_with_mocked_lb() {
+        let _ = tokio::time::timeout(Duration::from_secs(15), async {
         // Build a load balancer with two targets and set known stats
         let lb = Arc::new(create_test_load_balancer());
         // names from create_test_load_balancer: server1, server2
@@ -1299,7 +1228,7 @@ mod tests {
 
         // Optional: attach traffic logger with DB and insert rows for per-target stats
         let cfg = crate::config::LoggingConfig{ enabled: true, log_type: crate::config::LoggingType::Database, database: Some(crate::config::DatabaseConfig{ url: "sqlite::memory:".into(), max_connections: Some(5), connection_timeout: Some(30)}), file: None, retention_days: Some(7)};
-        let mut logger = crate::logger::TrafficLogger::new(cfg);
+        let logger = crate::logger::TrafficLogger::new(cfg);
         logger.initialize_shared().await.unwrap();
         // We can't call log_request with sizes; simulate via DB insert
         // Note: in-memory DB scope is per-connection pool; use logger.get_traffic_by_target to avoid extra connections
@@ -1343,242 +1272,140 @@ mod tests {
         assert!(v["traffic"]["unique_clients"].as_f64().unwrap_or(-1.0) >= 0.0);
         // Per-target list present
         assert!(v["targets_by_traffic"].is_array());
+        }).await.expect("test_metrics_json_numeric_consistency_with_mocked_lb timed out");
     }
 
     #[tokio::test]
     async fn test_handle_metrics_not_found() {
-        use hyper::{Body, Method, Request};
-
-        // Test unknown endpoint
-        let req = Request::builder()
-            .method(Method::GET)
-            .uri("/unknown")
-            .body(Body::empty())
-            .unwrap();
-
-        let response = handle_metrics(req).await.unwrap();
-
-        assert_eq!(response.status(), hyper::StatusCode::NOT_FOUND);
-
-        let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
-        let body_str = String::from_utf8(body_bytes.to_vec()).unwrap();
-        assert!(
-            body_str.contains("Not found"),
-            "Should contain error message"
-        );
-        assert!(
-            body_str.contains("/metrics"),
-            "Should mention available endpoints"
-        );
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            use hyper::{Body, Method, Request};
+            let req = Request::builder().method(Method::GET).uri("/unknown").body(Body::empty()).unwrap();
+            let response = handle_metrics(req).await.unwrap();
+            assert_eq!(response.status(), hyper::StatusCode::NOT_FOUND);
+            let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
+            let body_str = String::from_utf8(body_bytes.to_vec()).unwrap();
+            assert!(body_str.contains("Not found"));
+            assert!(body_str.contains("/metrics"));
+        }).await.expect("test_handle_metrics_not_found timed out");
     }
 
     #[tokio::test]
     async fn test_handle_metrics_wrong_method() {
-        use hyper::{Body, Method, Request};
-
-        // Test POST method (should return 404)
-        let req = Request::builder()
-            .method(Method::POST)
-            .uri("/metrics")
-            .body(Body::empty())
-            .unwrap();
-
-        let response = handle_metrics(req).await.unwrap();
-
-        assert_eq!(response.status(), hyper::StatusCode::NOT_FOUND);
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            use hyper::{Body, Method, Request};
+            let req = Request::builder().method(Method::POST).uri("/metrics").body(Body::empty()).unwrap();
+            let response = handle_metrics(req).await.unwrap();
+            assert_eq!(response.status(), hyper::StatusCode::NOT_FOUND);
+        }).await.expect("test_handle_metrics_wrong_method timed out");
     }
 
     #[tokio::test]
     async fn test_handle_health_endpoint() {
-        use hyper::{Body, Method, Request};
-
-        // Test /health endpoint
-        let req = Request::builder()
-            .method(Method::GET)
-            .uri("/health")
-            .body(Body::empty())
-            .unwrap();
-
-        let response = handle_health(req).await.unwrap();
-
-        assert_eq!(response.status(), hyper::StatusCode::OK);
-        assert_eq!(
-            response.headers().get("content-type").unwrap(),
-            "application/json"
-        );
-
-        // Check response body
-        let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
-        let body_str = String::from_utf8(body_bytes.to_vec()).unwrap();
-
-        let json_value: serde_json::Value =
-            serde_json::from_str(&body_str).expect("Health response should be valid JSON");
-
-        assert_eq!(json_value["status"], "healthy");
-        assert!(json_value.get("timestamp").is_some());
-        assert!(json_value.get("uptime_seconds").is_some());
-        assert!(json_value.get("version").is_some());
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            use hyper::{Body, Method, Request};
+            let req = Request::builder().method(Method::GET).uri("/health").body(Body::empty()).unwrap();
+            let response = handle_health(req).await.unwrap();
+            assert_eq!(response.status(), hyper::StatusCode::OK);
+            assert_eq!(response.headers().get("content-type").unwrap(), "application/json");
+            let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
+            let body_str = String::from_utf8(body_bytes.to_vec()).unwrap();
+            let json_value: serde_json::Value = serde_json::from_str(&body_str).expect("Health response should be valid JSON");
+            assert_eq!(json_value["status"], "healthy");
+            assert!(json_value.get("timestamp").is_some());
+            assert!(json_value.get("uptime_seconds").is_some());
+            assert!(json_value.get("version").is_some());
+        }).await.expect("test_handle_health_endpoint timed out");
     }
 
     #[tokio::test]
     async fn test_handle_health_root_endpoint() {
-        use hyper::{Body, Method, Request};
-
-        // Test root endpoint "/" also works for health
-        let req = Request::builder()
-            .method(Method::GET)
-            .uri("/")
-            .body(Body::empty())
-            .unwrap();
-
-        let response = handle_health(req).await.unwrap();
-
-        assert_eq!(response.status(), hyper::StatusCode::OK);
-        assert_eq!(
-            response.headers().get("content-type").unwrap(),
-            "application/json"
-        );
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            use hyper::{Body, Method, Request};
+            let req = Request::builder().method(Method::GET).uri("/").body(Body::empty()).unwrap();
+            let response = handle_health(req).await.unwrap();
+            assert_eq!(response.status(), hyper::StatusCode::OK);
+            assert_eq!(response.headers().get("content-type").unwrap(), "application/json");
+        }).await.expect("test_handle_health_root_endpoint timed out");
     }
 
     #[tokio::test]
     async fn test_handle_health_ready_endpoint() {
-        use hyper::{Body, Method, Request};
-
-        // Test /ready endpoint
-        let req = Request::builder()
-            .method(Method::GET)
-            .uri("/ready")
-            .body(Body::empty())
-            .unwrap();
-
-        let response = handle_health(req).await.unwrap();
-
-        // Status could be OK or SERVICE_UNAVAILABLE depending on readiness
-        assert!(
-            response.status() == hyper::StatusCode::OK
-                || response.status() == hyper::StatusCode::SERVICE_UNAVAILABLE
-        );
-
-        let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
-        let body_str = String::from_utf8(body_bytes.to_vec()).unwrap();
-
-        let json_value: serde_json::Value =
-            serde_json::from_str(&body_str).expect("Ready response should be valid JSON");
-
-        // The JSON structure might vary depending on readiness status
-        assert!(
-            json_value.get("ready").is_some() || json_value.get("status").is_some(),
-            "Should contain ready status or general status"
-        );
-        assert!(json_value.get("timestamp").is_some());
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            use hyper::{Body, Method, Request};
+            let req = Request::builder().method(Method::GET).uri("/ready").body(Body::empty()).unwrap();
+            let response = handle_health(req).await.unwrap();
+            assert!(response.status() == hyper::StatusCode::OK || response.status() == hyper::StatusCode::SERVICE_UNAVAILABLE);
+            let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
+            let body_str = String::from_utf8(body_bytes.to_vec()).unwrap();
+            let json_value: serde_json::Value = serde_json::from_str(&body_str).expect("Ready response should be valid JSON");
+            assert!(json_value.get("ready").is_some() || json_value.get("status").is_some());
+            assert!(json_value.get("timestamp").is_some());
+        }).await.expect("test_handle_health_ready_endpoint timed out");
     }
 
     #[tokio::test]
     async fn test_generate_fallback_metrics() {
-        let metrics = generate_fallback_metrics().await;
-
-        assert!(!metrics.is_empty(), "Fallback metrics should not be empty");
-        assert!(
-            metrics.contains("dispa_uptime_seconds"),
-            "Should contain uptime metric"
-        );
-        assert!(
-            metrics.contains("dispa_targets_healthy"),
-            "Should contain healthy targets metric"
-        );
-        assert!(
-            metrics.contains("dispa_requests_total"),
-            "Should contain requests metric"
-        );
-
-        // Check Prometheus format
-        let lines: Vec<&str> = metrics.lines().collect();
-        let metric_lines: Vec<&str> = lines
-            .iter()
-            .filter(|line| !line.starts_with('#') && !line.is_empty())
-            .copied()
-            .collect();
-
-        assert!(!metric_lines.is_empty(), "Should have actual metric values");
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            let metrics = generate_fallback_metrics().await;
+            assert!(!metrics.is_empty());
+            assert!(metrics.contains("dispa_uptime_seconds"));
+            assert!(metrics.contains("dispa_targets_healthy"));
+            assert!(metrics.contains("dispa_requests_total"));
+            let lines: Vec<&str> = metrics.lines().collect();
+            let metric_lines: Vec<&str> = lines.iter().filter(|line| !line.starts_with('#') && !line.is_empty()).copied().collect();
+            assert!(!metric_lines.is_empty());
+        }).await.expect("test_generate_fallback_metrics timed out");
     }
 
     #[tokio::test]
     async fn test_generate_json_metrics() {
-        let metrics = generate_json_metrics().await;
-
-        assert!(!metrics.is_empty(), "JSON metrics should not be empty");
-
-        // Parse as JSON to verify format
-        let json_value: serde_json::Value =
-            serde_json::from_str(&metrics).expect("Should be valid JSON");
-
-        assert!(json_value.is_object(), "Should be a JSON object");
-        assert!(
-            json_value.get("uptime_seconds").is_some(),
-            "Should contain uptime"
-        );
-        assert!(
-            json_value.get("targets").is_some(),
-            "Should contain targets section"
-        );
-
-        let targets = json_value.get("targets").unwrap();
-        assert!(
-            targets.get("healthy").is_some(),
-            "Should contain healthy targets count"
-        );
-        assert!(
-            targets.get("total").is_some(),
-            "Should contain total targets count"
-        );
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            let metrics = generate_json_metrics().await;
+            assert!(!metrics.is_empty());
+            let json_value: serde_json::Value = serde_json::from_str(&metrics).expect("Should be valid JSON");
+            assert!(json_value.is_object());
+            assert!(json_value.get("uptime_seconds").is_some());
+            assert!(json_value.get("targets").is_some());
+            let targets = json_value.get("targets").unwrap();
+            assert!(targets.get("healthy").is_some());
+            assert!(targets.get("total").is_some());
+        }).await.expect("test_generate_json_metrics timed out");
     }
 
     #[tokio::test]
     async fn test_register_metrics() {
-        // Test that register_metrics doesn't panic
-        register_metrics();
-
-        // Call it again to test idempotency
-        register_metrics();
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            register_metrics();
+            register_metrics();
+        }).await.expect("test_register_metrics timed out");
     }
 
     #[tokio::test]
     async fn test_record_request_metric_http_endpoints() {
-        use std::time::Duration;
-
-        // Test that record_request_metric doesn't panic with valid inputs
-        record_request_metric("GET", 200, Duration::from_millis(100), "backend1");
-        record_request_metric("POST", 404, Duration::from_millis(50), "backend2");
-        record_request_metric("PUT", 500, Duration::from_millis(200), "backend3");
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            use std::time::Duration;
+            record_request_metric("GET", 200, Duration::from_millis(100), "backend1");
+            record_request_metric("POST", 404, Duration::from_millis(50), "backend2");
+            record_request_metric("PUT", 500, Duration::from_millis(200), "backend3");
+        }).await.expect("test_record_request_metric_http_endpoints timed out");
     }
 
     #[tokio::test]
     async fn test_request_metric_recording_http_edge_cases() {
-        use std::time::Duration;
-
-        // Test edge cases
-        record_request_metric("", 0, Duration::from_millis(0), "");
-        record_request_metric(
-            "VERY_LONG_METHOD_NAME",
-            999,
-            Duration::from_secs(1000),
-            "very_long_target_name_that_should_still_work",
-        );
-
-        // Test with unusual but valid HTTP methods
-        record_request_metric("PATCH", 204, Duration::from_micros(1), "fast_backend");
-        record_request_metric("OPTIONS", 200, Duration::from_nanos(500), "options_backend");
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            use std::time::Duration;
+            record_request_metric("", 0, Duration::from_millis(0), "");
+            record_request_metric("VERY_LONG_METHOD_NAME", 999, Duration::from_secs(1000), "very_long_target_name_that_should_still_work");
+            record_request_metric("PATCH", 204, Duration::from_micros(1), "fast_backend");
+            record_request_metric("OPTIONS", 200, Duration::from_nanos(500), "options_backend");
+        }).await.expect("test_request_metric_recording_http_edge_cases timed out");
     }
 
     #[tokio::test]
     async fn test_check_readiness() {
-        let is_ready = check_readiness().await;
-
-        // In a clean test environment without a metrics collector, readiness should be false
-        // This is actually the expected behavior since no load balancer is configured
-        assert!(
-            !is_ready,
-            "System should not be ready without configured metrics collector"
-        );
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            let is_ready = check_readiness().await;
+            assert!(!is_ready);
+        }).await.expect("test_check_readiness timed out");
     }
 }

@@ -868,6 +868,7 @@ pub struct ConfigManager {
     config: Arc<RwLock<Config>>,
     config_path: PathBuf,
     _watcher: Option<RecommendedWatcher>,
+    #[allow(clippy::type_complexity)]
     reload_hook: Option<Arc<dyn Fn(&Config) + Send + Sync>>, // optional callback on reload
 }
 
@@ -982,6 +983,7 @@ impl ConfigManager {
 }
 
 /// Handle configuration file change events
+#[allow(clippy::type_complexity)]
 async fn handle_config_change(
     event: &Event,
     config: &Arc<RwLock<Config>>,

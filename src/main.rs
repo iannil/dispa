@@ -20,7 +20,6 @@ mod security;
 
 use config::{Config, ConfigManager};
 use crate::plugins::PluginEngine;
-use std::sync::Arc;
 use crate::proxy::http_client;
 use proxy::ProxyServer;
 use crate::monitoring::admin::{self, AdminState};

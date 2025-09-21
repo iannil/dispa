@@ -732,6 +732,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_concurrent_access() {
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(10), async {
         let targets = vec![
             create_test_target("server1", None),
             create_test_target("server2", None),
@@ -763,6 +764,7 @@ mod tests {
         let server1_stats = stats.get("server1").unwrap();
         assert_eq!(server1_stats.total_requests, 1000);
         assert_eq!(server1_stats.active_connections, 1000);
+        }).await.expect("test_concurrent_access timed out");
     }
 
     #[tokio::test]
@@ -1007,6 +1009,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_concurrent_mixed_operations() {
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(15), async {
         let targets = vec![
             create_test_target("server1", Some(2)),
             create_test_target("server2", Some(3)),
@@ -1065,5 +1068,6 @@ mod tests {
         assert_eq!(summary.total_targets, 2);
         assert!(summary.total_requests > 0);
         assert!(summary.total_active_connections > 0);
+        }).await.expect("test_concurrent_mixed_operations timed out");
     }
 }

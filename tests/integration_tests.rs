@@ -129,102 +129,54 @@ fn create_minimal_test_config() -> Config {
 
 #[tokio::test]
 async fn test_proxy_server_creation_integration() {
-    let config = create_integration_test_config();
-    let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-    let traffic_logger = TrafficLogger::new(config.logging.clone());
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+        let config = create_integration_test_config();
+        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        let traffic_logger = TrafficLogger::new(config.logging.clone());
 
-    // Create proxy server - this should integrate all components
-    let proxy_server = ProxyServer::new(config.clone(), bind_addr, traffic_logger);
+        // Create proxy server - this should integrate all components
+        let proxy_server = ProxyServer::new(config.clone(), bind_addr, traffic_logger);
 
-    // Verify the proxy server was created successfully
-    // Since we can't easily test the actual server without starting it,
-    // we verify the configuration was properly integrated
-    assert_eq!(proxy_server.bind_addr, bind_addr);
-    // The actual load balancer and traffic logger integration is verified
-    // through the successful creation of the ProxyServer
+        // Verify the proxy server was created successfully
+        assert_eq!(proxy_server.bind_addr, bind_addr);
+    }).await.expect("test_proxy_server_creation_integration timed out");
 }
 
 #[tokio::test]
 async fn test_config_validation_integration() {
-    let mut config = create_integration_test_config();
-
-    // Test valid configuration
-    assert!(config.validate().is_ok());
-
-    // Test invalid configurations
-    config.domains.intercept_domains.clear();
-    assert!(
-        config.validate().is_err(),
-        "Empty intercept domains should fail validation"
-    );
-
-    // Restore intercept domains and test empty targets
-    config
-        .domains
-        .intercept_domains
-        .push("test.com".to_string());
-    config.targets.targets.clear();
-    assert!(
-        config.validate().is_err(),
-        "Empty targets should fail validation"
-    );
-
-    // Test empty target URL
-    config.targets.targets.push(Target {
-        name: "empty_url".to_string(),
-        url: "".to_string(),
-        weight: Some(1),
-        timeout: Some(30),
-    });
-    assert!(
-        config.validate().is_err(),
-        "Empty target URL should fail validation"
-    );
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+        let mut config = create_integration_test_config();
+        assert!(config.validate().is_ok());
+        config.domains.intercept_domains.clear();
+        assert!(config.validate().is_err(), "Empty intercept domains should fail validation");
+        config.domains.intercept_domains.push("test.com".to_string());
+        config.targets.targets.clear();
+        assert!(config.validate().is_err(), "Empty targets should fail validation");
+        config.targets.targets.push(Target { name: "empty_url".to_string(), url: "".to_string(), weight: Some(1), timeout: Some(30) });
+        assert!(config.validate().is_err(), "Empty target URL should fail validation");
+    }).await.expect("test_config_validation_integration timed out");
 }
 
 #[tokio::test]
 async fn test_load_balancing_types_integration() {
-    let traffic_logger = TrafficLogger::new(LoggingConfig {
-        enabled: false,
-        log_type: LoggingType::File,
-        database: None,
-        file: None,
-        retention_days: None,
-    });
-
-    let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-
-    // Test each load balancing type
-    for lb_type in [
-        LoadBalancingType::RoundRobin,
-        LoadBalancingType::Weighted,
-        LoadBalancingType::Random,
-        LoadBalancingType::LeastConnections,
-    ] {
-        let mut config = create_integration_test_config();
-        config.targets.load_balancing.lb_type = lb_type.clone();
-
-        let proxy_server = ProxyServer::new(config, bind_addr, traffic_logger.clone());
-
-        // Verify proxy server creation succeeds with each load balancing type
-        assert_eq!(proxy_server.bind_addr, bind_addr);
-    }
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+        let traffic_logger = TrafficLogger::new(LoggingConfig { enabled: false, log_type: LoggingType::File, database: None, file: None, retention_days: None });
+        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        for lb_type in [LoadBalancingType::RoundRobin, LoadBalancingType::Weighted, LoadBalancingType::Random, LoadBalancingType::LeastConnections] {
+            let mut config = create_integration_test_config();
+            config.targets.load_balancing.lb_type = lb_type.clone();
+            let proxy_server = ProxyServer::new(config, bind_addr, traffic_logger.clone());
+            assert_eq!(proxy_server.bind_addr, bind_addr);
+        }
+    }).await.expect("test_load_balancing_types_integration timed out");
 }
 
 #[tokio::test]
 async fn test_domain_configuration_integration() {
-    let traffic_logger = TrafficLogger::new(LoggingConfig {
-        enabled: false,
-        log_type: LoggingType::File,
-        database: None,
-        file: None,
-        retention_days: None,
-    });
-
-    let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-
-    // Test various domain configurations
-    let domain_configs = vec![
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+        let traffic_logger = TrafficLogger::new(LoggingConfig { enabled: false, log_type: LoggingType::File, database: None, file: None, retention_days: None });
+        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        let domain_configs = vec![
         // Simple domain
         DomainConfig {
             intercept_domains: vec!["simple.com".to_string()],
@@ -262,31 +214,21 @@ async fn test_domain_configuration_integration() {
         },
     ];
 
-    for domain_config in domain_configs {
-        let mut config = create_minimal_test_config();
-        config.domains = domain_config.clone();
-
-        let proxy_server = ProxyServer::new(config, bind_addr, traffic_logger.clone());
-
-        // Verify proxy server integrates domain configuration correctly
-        assert_eq!(proxy_server.bind_addr, bind_addr);
-    }
+        for domain_config in domain_configs {
+            let mut config = create_minimal_test_config();
+            config.domains = domain_config.clone();
+            let proxy_server = ProxyServer::new(config, bind_addr, traffic_logger.clone());
+            assert_eq!(proxy_server.bind_addr, bind_addr);
+        }
+    }).await.expect("test_domain_configuration_integration timed out");
 }
 
 #[tokio::test]
 async fn test_target_configuration_integration() {
-    let traffic_logger = TrafficLogger::new(LoggingConfig {
-        enabled: false,
-        log_type: LoggingType::File,
-        database: None,
-        file: None,
-        retention_days: None,
-    });
-
-    let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-
-    // Test various target configurations
-    let target_sets = vec![
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+        let traffic_logger = TrafficLogger::new(LoggingConfig { enabled: false, log_type: LoggingType::File, database: None, file: None, retention_days: None });
+        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        let target_sets = vec![
         // Single target
         vec![Target {
             name: "single".to_string(),
@@ -347,49 +289,36 @@ async fn test_target_configuration_integration() {
         ],
     ];
 
-    for targets in target_sets {
-        let mut config = create_minimal_test_config();
-        config.targets.targets = targets.clone();
-
-        let proxy_server = ProxyServer::new(config, bind_addr, traffic_logger.clone());
-
-        // Verify proxy server integrates target configuration correctly
-        assert_eq!(proxy_server.bind_addr, bind_addr);
-    }
+        for targets in target_sets {
+            let mut config = create_minimal_test_config();
+            config.targets.targets = targets.clone();
+            let proxy_server = ProxyServer::new(config, bind_addr, traffic_logger.clone());
+            assert_eq!(proxy_server.bind_addr, bind_addr);
+        }
+    }).await.expect("test_target_configuration_integration timed out");
 }
 
 #[tokio::test]
 async fn test_monitoring_configuration_integration() {
-    let traffic_logger = TrafficLogger::new(LoggingConfig {
-        enabled: false,
-        log_type: LoggingType::File,
-        database: None,
-        file: None,
-        retention_days: None,
-    });
-
-    let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-
-    // Test monitoring enabled and disabled
-    for enabled in [true, false] {
-        let mut config = create_minimal_test_config();
-        config.monitoring.enabled = enabled;
-        config.monitoring.metrics_port = 9091;
-        config.monitoring.health_check_port = 8082;
-
-        let proxy_server = ProxyServer::new(config, bind_addr, traffic_logger.clone());
-
-        // Verify proxy server creation with monitoring config
-        assert_eq!(proxy_server.bind_addr, bind_addr);
-    }
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+        let traffic_logger = TrafficLogger::new(LoggingConfig { enabled: false, log_type: LoggingType::File, database: None, file: None, retention_days: None });
+        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        for enabled in [true, false] {
+            let mut config = create_minimal_test_config();
+            config.monitoring.enabled = enabled;
+            config.monitoring.metrics_port = 9091;
+            config.monitoring.health_check_port = 8082;
+            let proxy_server = ProxyServer::new(config, bind_addr, traffic_logger.clone());
+            assert_eq!(proxy_server.bind_addr, bind_addr);
+        }
+    }).await.expect("test_monitoring_configuration_integration timed out");
 }
 
 #[tokio::test]
 async fn test_logging_configuration_integration() {
-    let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-
-    // Test different logging configurations
-    let logging_configs = vec![
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        let logging_configs = vec![
         // Disabled logging
         LoggingConfig {
             enabled: false,
@@ -425,36 +354,25 @@ async fn test_logging_configuration_integration() {
         },
     ];
 
-    for logging_config in logging_configs {
-        let traffic_logger = TrafficLogger::new(logging_config.clone());
-        let mut config = create_minimal_test_config();
-        config.logging = logging_config;
-        // Ensure required optional fields are present
-        config.http_client = None;
-        config.plugins = None;
-        config.security = None;
-
-        let proxy_server = ProxyServer::new(config, bind_addr, traffic_logger);
-
-        // Verify proxy server integrates logging configuration correctly
-        assert_eq!(proxy_server.bind_addr, bind_addr);
-    }
+        for logging_config in logging_configs {
+            let traffic_logger = TrafficLogger::new(logging_config.clone());
+            let mut config = create_minimal_test_config();
+            config.logging = logging_config;
+            config.http_client = None;
+            config.plugins = None;
+            config.security = None;
+            let proxy_server = ProxyServer::new(config, bind_addr, traffic_logger);
+            assert_eq!(proxy_server.bind_addr, bind_addr);
+        }
+    }).await.expect("test_logging_configuration_integration timed out");
 }
 
 #[tokio::test]
 async fn test_health_check_configuration_integration() {
-    let traffic_logger = TrafficLogger::new(LoggingConfig {
-        enabled: false,
-        log_type: LoggingType::File,
-        database: None,
-        file: None,
-        retention_days: None,
-    });
-
-    let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-
-    // Test different health check configurations
-    let health_configs = vec![
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+        let traffic_logger = TrafficLogger::new(LoggingConfig { enabled: false, log_type: LoggingType::File, database: None, file: None, retention_days: None });
+        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        let health_configs = vec![
         // Disabled health checks
         HealthCheckConfig {
             enabled: false,
@@ -489,24 +407,22 @@ async fn test_health_check_configuration_integration() {
         },
     ];
 
-    for health_config in health_configs {
-        let mut config = create_minimal_test_config();
-        config.targets.health_check = health_config;
-        config.http_client = None;
-        config.plugins = None;
-        config.security = None;
-
-        let proxy_server = ProxyServer::new(config, bind_addr, traffic_logger.clone());
-
-        // Verify proxy server integrates health check configuration correctly
-        assert_eq!(proxy_server.bind_addr, bind_addr);
-    }
+        for health_config in health_configs {
+            let mut config = create_minimal_test_config();
+            config.targets.health_check = health_config;
+            config.http_client = None;
+            config.plugins = None;
+            config.security = None;
+            let proxy_server = ProxyServer::new(config, bind_addr, traffic_logger.clone());
+            assert_eq!(proxy_server.bind_addr, bind_addr);
+        }
+    }).await.expect("test_health_check_configuration_integration timed out");
 }
 
 #[tokio::test]
 async fn test_complete_configuration_integration() {
-    // Test a comprehensive configuration that exercises all components
-    let config = Config {
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+        let config = Config {
         server: ServerConfig {
             bind_address: "127.0.0.1:0".parse().unwrap(),
             workers: Some(4),
@@ -579,33 +495,20 @@ async fn test_complete_configuration_integration() {
         security: None,
     };
 
-    // Verify configuration is valid
-    assert!(config.validate().is_ok());
-
-    let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-    let traffic_logger = TrafficLogger::new(config.logging.clone());
-
-    // Create proxy server with comprehensive configuration
-    let proxy_server = ProxyServer::new(config, bind_addr, traffic_logger);
-
-    // Verify successful integration
-    assert_eq!(proxy_server.bind_addr, bind_addr);
+        assert!(config.validate().is_ok());
+        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        let traffic_logger = TrafficLogger::new(config.logging.clone());
+        let proxy_server = ProxyServer::new(config, bind_addr, traffic_logger);
+        assert_eq!(proxy_server.bind_addr, bind_addr);
+    }).await.expect("test_complete_configuration_integration timed out");
 }
 
 #[tokio::test]
 async fn test_configuration_edge_cases_integration() {
-    let traffic_logger = TrafficLogger::new(LoggingConfig {
-        enabled: false,
-        log_type: LoggingType::File,
-        database: None,
-        file: None,
-        retention_days: None,
-    });
-
-    let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-
-    // Test configuration with edge case values
-    let edge_case_config = Config {
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+        let traffic_logger = TrafficLogger::new(LoggingConfig { enabled: false, log_type: LoggingType::File, database: None, file: None, retention_days: None });
+        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        let edge_case_config = Config {
         server: ServerConfig {
             bind_address: "0.0.0.0:0".parse().unwrap(), // Any address, any port
             workers: Some(1),                           // Minimum workers
@@ -657,11 +560,8 @@ async fn test_configuration_edge_cases_integration() {
         security: None,
     };
 
-    // Verify edge case configuration is valid
-    assert!(edge_case_config.validate().is_ok());
-
-    let proxy_server = ProxyServer::new(edge_case_config, bind_addr, traffic_logger);
-
-    // Verify successful integration with edge case values
-    assert_eq!(proxy_server.bind_addr, bind_addr);
+        assert!(edge_case_config.validate().is_ok());
+        let proxy_server = ProxyServer::new(edge_case_config, bind_addr, traffic_logger);
+        assert_eq!(proxy_server.bind_addr, bind_addr);
+    }).await.expect("test_configuration_edge_cases_integration timed out");
 }

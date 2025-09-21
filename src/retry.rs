@@ -371,26 +371,27 @@ mod tests {
 
     #[tokio::test]
     async fn test_retry_success_on_first_attempt() {
-        let executor = RetryExecutor::with_defaults();
-        let counter = Arc::new(AtomicUsize::new(0));
-
-        let result = executor
-            .execute(|_ctx| {
-                let counter = Arc::clone(&counter);
-                async move {
-                    counter.fetch_add(1, Ordering::SeqCst);
-                    RetryResult::Success(42)
-                }
-            })
-            .await;
-
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 42);
-        assert_eq!(counter.load(Ordering::SeqCst), 1);
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            let executor = RetryExecutor::with_defaults();
+            let counter = Arc::new(AtomicUsize::new(0));
+            let result = executor
+                .execute(|_ctx| {
+                    let counter = Arc::clone(&counter);
+                    async move {
+                        counter.fetch_add(1, Ordering::SeqCst);
+                        RetryResult::Success(42)
+                    }
+                })
+                .await;
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap(), 42);
+            assert_eq!(counter.load(Ordering::SeqCst), 1);
+        }).await.expect("test_retry_success_on_first_attempt timed out");
     }
 
     #[tokio::test]
     async fn test_retry_success_after_failures() {
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
         let config = RetryConfig {
             max_attempts: 3,
             base_delay: Duration::from_millis(1), // Fast test
@@ -417,10 +418,12 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 42);
         assert_eq!(counter.load(Ordering::SeqCst), 3);
+        }).await.expect("test_retry_success_after_failures timed out");
     }
 
     #[tokio::test]
     async fn test_retry_max_attempts_exceeded() {
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
         let config = RetryConfig {
             max_attempts: 2,
             base_delay: Duration::from_millis(1), // Fast test
@@ -442,29 +445,31 @@ mod tests {
 
         assert!(result.is_err());
         assert_eq!(counter.load(Ordering::SeqCst), 2);
+        }).await.expect("test_retry_max_attempts_exceeded timed out");
     }
 
     #[tokio::test]
     async fn test_retry_abort_on_non_retryable_error() {
-        let executor = RetryExecutor::with_defaults();
-        let counter = Arc::new(AtomicUsize::new(0));
-
-        let result = executor
-            .execute(|_ctx| {
-                let counter = Arc::clone(&counter);
-                async move {
-                    counter.fetch_add(1, Ordering::SeqCst);
-                    RetryResult::<i32>::Abort(DispaError::config("invalid configuration"))
-                }
-            })
-            .await;
-
-        assert!(result.is_err());
-        assert_eq!(counter.load(Ordering::SeqCst), 1);
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            let executor = RetryExecutor::with_defaults();
+            let counter = Arc::new(AtomicUsize::new(0));
+            let result = executor
+                .execute(|_ctx| {
+                    let counter = Arc::clone(&counter);
+                    async move {
+                        counter.fetch_add(1, Ordering::SeqCst);
+                        RetryResult::<i32>::Abort(DispaError::config("invalid configuration"))
+                    }
+                })
+                .await;
+            assert!(result.is_err());
+            assert_eq!(counter.load(Ordering::SeqCst), 1);
+        }).await.expect("test_retry_abort_on_non_retryable_error timed out");
     }
 
     #[tokio::test]
     async fn test_exponential_backoff() {
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(3), async {
         let config = RetryConfig {
             base_delay: Duration::from_millis(100),
             backoff: BackoffStrategy::Exponential { multiplier: 2.0 },
@@ -478,10 +483,12 @@ mod tests {
         assert_eq!(executor.calculate_delay(1), Duration::from_millis(100));
         assert_eq!(executor.calculate_delay(2), Duration::from_millis(200));
         assert_eq!(executor.calculate_delay(3), Duration::from_millis(400));
+        }).await.expect("test_exponential_backoff timed out");
     }
 
     #[tokio::test]
     async fn test_linear_backoff() {
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(3), async {
         let config = RetryConfig {
             base_delay: Duration::from_millis(100),
             backoff: BackoffStrategy::Linear,
@@ -495,10 +502,12 @@ mod tests {
         assert_eq!(executor.calculate_delay(1), Duration::from_millis(100));
         assert_eq!(executor.calculate_delay(2), Duration::from_millis(200));
         assert_eq!(executor.calculate_delay(3), Duration::from_millis(300));
+        }).await.expect("test_linear_backoff timed out");
     }
 
     #[tokio::test]
     async fn test_fixed_backoff() {
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(3), async {
         let config = RetryConfig {
             base_delay: Duration::from_millis(100),
             backoff: BackoffStrategy::Fixed,
@@ -512,32 +521,29 @@ mod tests {
         assert_eq!(executor.calculate_delay(1), Duration::from_millis(100));
         assert_eq!(executor.calculate_delay(2), Duration::from_millis(100));
         assert_eq!(executor.calculate_delay(3), Duration::from_millis(100));
+        }).await.expect("test_fixed_backoff timed out");
     }
 
     #[tokio::test]
     async fn test_error_recovery_with_retry() {
-        let counter = Arc::new(AtomicUsize::new(0));
-
-        let result = ErrorRecovery::with_retry(|_ctx| {
-            let counter = Arc::clone(&counter);
-            async move {
-                let count = counter.fetch_add(1, Ordering::SeqCst) + 1;
-                if count < 2 {
-                    Err(DispaError::network("temporary failure"))
-                } else {
-                    Ok(42)
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            let counter = Arc::new(AtomicUsize::new(0));
+            let result = ErrorRecovery::with_retry(|_ctx| {
+                let counter = Arc::clone(&counter);
+                async move {
+                    let count = counter.fetch_add(1, Ordering::SeqCst) + 1;
+                    if count < 2 { Err(DispaError::network("temporary failure")) } else { Ok(42) }
                 }
-            }
-        })
-        .await;
-
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 42);
-        assert_eq!(counter.load(Ordering::SeqCst), 2);
+            }).await;
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap(), 42);
+            assert_eq!(counter.load(Ordering::SeqCst), 2);
+        }).await.expect("test_error_recovery_with_retry timed out");
     }
 
     #[tokio::test]
     async fn test_exponential_backoff_helper() {
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(3), async {
         let config = RetryConfig {
             max_attempts: 3,
             base_delay: Duration::from_millis(100),
@@ -567,29 +573,26 @@ mod tests {
         // Test reset
         backoff.reset();
         assert_eq!(backoff.current_attempt(), 0);
+        }).await.expect("test_exponential_backoff_helper timed out");
     }
 
     #[tokio::test]
     async fn test_retry_context() {
-        let executor = RetryExecutor::with_defaults();
-        let contexts = Arc::new(std::sync::Mutex::new(Vec::new()));
-
-        let _ = executor
-            .execute(|ctx| {
-                let contexts = Arc::clone(&contexts);
-                async move {
-                    contexts.lock().unwrap().push(ctx);
-                    RetryResult::<i32>::Retry(DispaError::network("test error"))
-                }
-            })
-            .await;
-
-        let contexts = contexts.lock().unwrap();
-        assert!(!contexts.is_empty());
-
-        // Check that attempt numbers increase
-        for (i, ctx) in contexts.iter().enumerate() {
-            assert_eq!(ctx.attempt, (i + 1) as u32);
-        }
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            let executor = RetryExecutor::with_defaults();
+            let contexts = Arc::new(std::sync::Mutex::new(Vec::new()));
+            let _ = executor
+                .execute(|ctx| {
+                    let contexts = Arc::clone(&contexts);
+                    async move {
+                        contexts.lock().unwrap().push(ctx);
+                        RetryResult::<i32>::Retry(DispaError::network("test error"))
+                    }
+                })
+                .await;
+            let contexts = contexts.lock().unwrap();
+            assert!(!contexts.is_empty());
+            for (i, ctx) in contexts.iter().enumerate() { assert_eq!(ctx.attempt, (i + 1) as u32); }
+        }).await.expect("test_retry_context timed out");
     }
 }

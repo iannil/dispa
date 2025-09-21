@@ -1129,55 +1129,53 @@ mod tests {
 
     #[tokio::test]
     async fn test_concurrent_logging() {
-        let (config, _temp_dir) = create_test_logging_config_db_only();
-        let mut logger = TrafficLogger::new(config);
-        logger.initialize().await.unwrap();
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+            let (config, _temp_dir) = create_test_logging_config_db_only();
+            let mut logger = TrafficLogger::new(config);
+            logger.initialize().await.unwrap();
 
-        let logger = std::sync::Arc::new(logger);
-        let mut handles = Vec::new();
+            let logger = std::sync::Arc::new(logger);
+            let mut handles = Vec::new();
 
-        // Create multiple concurrent logging tasks
-        for i in 0..10 {
-            let logger_clone = std::sync::Arc::clone(&logger);
-            let handle = tokio::spawn(async move {
-                let request_id = Uuid::new_v4();
-                let client_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 0, 0, i + 1)), 8080);
+            for i in 0..10 {
+                let logger_clone = std::sync::Arc::clone(&logger);
+                let handle = tokio::spawn(async move {
+                    let request_id = Uuid::new_v4();
+                    let client_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 0, 0, i + 1)), 8080);
+                    logger_clone
+                        .log_request(
+                            request_id,
+                            client_addr,
+                            "concurrent.example.com",
+                            "GET",
+                            &format!("/concurrent/{}", i),
+                            "backend1",
+                            StatusCode::OK,
+                            Utc::now(),
+                            std::time::Duration::from_millis(50),
+                            Some("concurrent-test/1.0"),
+                            None,
+                        )
+                        .await
+                });
+                handles.push(handle);
+            }
 
-                logger_clone
-                    .log_request(
-                        request_id,
-                        client_addr,
-                        "concurrent.example.com",
-                        "GET",
-                        &format!("/concurrent/{}", i),
-                        "backend1",
-                        StatusCode::OK,
-                        Utc::now(),
-                        std::time::Duration::from_millis(50),
-                        Some("concurrent-test/1.0"),
-                        None,
-                    )
+            for handle in handles {
+                let result = handle.await.unwrap();
+                assert!(result.is_ok());
+            }
+
+            let pool_opt = { logger.db_pool.read().unwrap().clone() };
+            if let Some(ref pool) = pool_opt {
+                let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM traffic_logs WHERE host = ?")
+                    .bind("concurrent.example.com")
+                    .fetch_one(pool)
                     .await
-            });
-            handles.push(handle);
-        }
-
-        // Wait for all tasks to complete
-        for handle in handles {
-            let result = handle.await.unwrap();
-            assert!(result.is_ok());
-        }
-
-        // Verify all requests were logged
-        let pool_opt = { logger.db_pool.read().unwrap().clone() };
-        if let Some(ref pool) = pool_opt {
-            let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM traffic_logs WHERE host = ?")
-                .bind("concurrent.example.com")
-                .fetch_one(pool)
-                .await
-                .unwrap();
-            assert_eq!(count, 10);
-        }
+                    .unwrap();
+                assert_eq!(count, 10);
+            }
+        }).await.expect("test_concurrent_logging timed out");
     }
 
     #[tokio::test]
@@ -1309,67 +1307,52 @@ mod tests {
 
     #[tokio::test]
     async fn test_logging_concurrent_requests() {
-        let (config, _temp_dir) = create_test_logging_config_db_only();
-        let mut logger = TrafficLogger::new(config);
-        logger.initialize().await.unwrap();
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(20), async {
+            let (config, _temp_dir) = create_test_logging_config_db_only();
+            let mut logger = TrafficLogger::new(config);
+            logger.initialize().await.unwrap();
 
-        let logger = Arc::new(logger);
-        let mut handles = Vec::new();
+            let logger = Arc::new(logger);
+            let mut handles = Vec::new();
 
-        // Create many concurrent logging tasks
-        for i in 0..50 {
-            let logger_clone = Arc::clone(&logger);
-            let handle = tokio::spawn(async move {
-                let request_id = Uuid::new_v4();
-                let client_addr =
-                    SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8000 + i);
+            for i in 0..50 {
+                let logger_clone = Arc::clone(&logger);
+                let handle = tokio::spawn(async move {
+                    let request_id = Uuid::new_v4();
+                    let client_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8000 + i);
+                    logger_clone
+                        .log_request(
+                            request_id,
+                            client_addr,
+                            &format!("concurrent-{}.example.com", i),
+                            "GET",
+                            &format!("/test/{}", i),
+                            &format!("backend-{}", i % 3 + 1),
+                            if i % 2 == 0 { StatusCode::OK } else { StatusCode::INTERNAL_SERVER_ERROR },
+                            Utc::now(),
+                            std::time::Duration::from_millis(100 + i as u64),
+                            Some("concurrent-test/1.0"),
+                            if i % 5 == 0 { Some("Simulated error") } else { None },
+                        )
+                        .await
+                });
+                handles.push(handle);
+            }
 
-                logger_clone
-                    .log_request(
-                        request_id,
-                        client_addr,
-                        &format!("concurrent-{}.example.com", i),
-                        "GET",
-                        &format!("/test/{}", i),
-                        &format!("backend-{}", i % 3 + 1),
-                        if i % 2 == 0 {
-                            StatusCode::OK
-                        } else {
-                            StatusCode::INTERNAL_SERVER_ERROR
-                        },
-                        Utc::now(),
-                        std::time::Duration::from_millis(100 + i as u64),
-                        Some("concurrent-test/1.0"),
-                        if i % 5 == 0 {
-                            Some("Simulated error")
-                        } else {
-                            None
-                        },
-                    )
+            for handle in handles {
+                let result = handle.await.unwrap();
+                assert!(result.is_ok(), "Concurrent logging failed");
+            }
+
+            let pool_opt = { logger.db_pool.read().unwrap().clone() };
+            if let Some(ref pool) = pool_opt {
+                let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM traffic_logs")
+                    .fetch_one(pool)
                     .await
-            });
-            handles.push(handle);
-        }
-
-        // Wait for all logging operations to complete
-        for handle in handles {
-            let result = handle.await.unwrap();
-            assert!(result.is_ok(), "Concurrent logging failed");
-        }
-
-        // Verify that all logs were written
-        let pool_opt = { logger.db_pool.read().unwrap().clone() };
-        if let Some(ref pool) = pool_opt {
-            let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM traffic_logs")
-                .fetch_one(pool)
-                .await
-                .unwrap();
-            assert!(
-                count >= 50,
-                "Expected at least 50 log entries, found {}",
-                count
-            );
-        }
+                    .unwrap();
+                assert!(count >= 50, "Expected at least 50 log entries, found {}", count);
+            }
+        }).await.expect("test_logging_concurrent_requests timed out");
     }
 
     #[tokio::test]

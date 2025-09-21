@@ -40,7 +40,7 @@ unhealthy_threshold = 3
 
 [logging]
 enabled = true
-type = "both"  # file | database | both
+type = "file"  # file | database | both
 retention_days = 30
 
 # 数据库日志配置 (当type为database或both时使用)

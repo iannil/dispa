@@ -1124,13 +1124,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_routing_engine_creation() {
-        let config = create_test_config();
-        let engine = RoutingEngine::new(config).unwrap();
-        assert_eq!(engine.compiled_rules.len(), 1);
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            let config = create_test_config();
+            let engine = RoutingEngine::new(config).unwrap();
+            assert_eq!(engine.compiled_rules.len(), 1);
+        }).await.expect("test_routing_engine_creation timed out");
     }
 
     #[tokio::test]
     async fn test_path_based_routing() {
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
         let config = create_test_config();
         let engine = RoutingEngine::new(config).unwrap();
 
@@ -1144,6 +1147,7 @@ mod tests {
         let decision = engine.route_request(&req).await;
         assert_eq!(decision.target, "api-backend");
         assert_eq!(decision.rule_name, Some("api-route".to_string()));
+        }).await.expect("test_path_based_routing timed out");
     }
 
     #[test]
@@ -1165,6 +1169,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_default_routing() {
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
         let config = create_test_config();
         let engine = RoutingEngine::new(config).unwrap();
 
@@ -1177,10 +1182,12 @@ mod tests {
         let decision = engine.route_request(&req).await;
         assert_eq!(decision.target, "default-backend");
         assert_eq!(decision.rule_name, None);
+        }).await.expect("test_default_routing timed out");
     }
 
     #[tokio::test]
     async fn test_header_matching() {
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
         let config = create_test_config();
         let engine = RoutingEngine::new(config).unwrap();
 
@@ -1204,10 +1211,12 @@ mod tests {
 
         let decision = engine.route_request(&req).await;
         assert_eq!(decision.target, "api-backend");
+        }).await.expect("test_header_matching timed out");
     }
 
     #[tokio::test]
     async fn test_method_matching() {
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
         let config = create_test_config();
         let engine = RoutingEngine::new(config).unwrap();
 
@@ -1232,10 +1241,12 @@ mod tests {
 
         let decision = engine.route_request(&req).await;
         assert_eq!(decision.target, "default-backend");
+        }).await.expect("test_method_matching timed out");
     }
 
     #[tokio::test]
     async fn test_header_actions() {
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
         let config = create_test_config();
         let engine = RoutingEngine::new(config).unwrap();
 
@@ -1256,10 +1267,12 @@ mod tests {
 
             assert_eq!(headers.get("X-Routed-By").unwrap(), "dispa");
         }
+        }).await.expect("test_header_actions timed out");
     }
 
     #[tokio::test]
     async fn test_path_transformation() {
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
         let config = create_test_config();
         let engine = RoutingEngine::new(config).unwrap();
 
@@ -1279,10 +1292,12 @@ mod tests {
                 .unwrap();
             assert_eq!(transformed_req.uri().path(), "/users");
         }
+        }).await.expect("test_path_transformation timed out");
     }
 
     #[tokio::test]
     async fn test_regex_path_matching() {
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
         let config = RoutingConfig {
             rules: vec![RoutingRule {
                 name: "regex-route".to_string(),
@@ -1337,10 +1352,12 @@ mod tests {
 
         let decision = engine.route_request(&req).await;
         assert_eq!(decision.target, "default");
+        }).await.expect("test_regex_path_matching timed out");
     }
 
     #[tokio::test]
     async fn test_custom_response() {
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
         let config = RoutingConfig {
             rules: vec![RoutingRule {
                 name: "maintenance".to_string(),
@@ -1398,5 +1415,6 @@ mod tests {
             assert_eq!(resp.status().as_u16(), 503);
             assert_eq!(resp.headers().get("retry-after").unwrap(), "3600");
         }
+        }).await.expect("test_custom_response timed out");
     }
 }

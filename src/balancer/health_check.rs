@@ -316,35 +316,32 @@ mod tests {
 
     #[tokio::test]
     async fn test_health_checker_creation() {
-        let config = create_test_health_config();
-        let checker = HealthChecker::new(config.clone());
-
-        assert_eq!(checker.config.enabled, config.enabled);
-        assert_eq!(checker.config.interval, config.interval);
-        assert_eq!(checker.config.timeout, config.timeout);
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            let config = create_test_health_config();
+            let checker = HealthChecker::new(config.clone());
+            assert_eq!(checker.config.enabled, config.enabled);
+            assert_eq!(checker.config.interval, config.interval);
+            assert_eq!(checker.config.timeout, config.timeout);
+        }).await.expect("test_health_checker_creation timed out");
     }
 
     #[tokio::test]
     async fn test_healthy_target_check() {
-        let mock_server = MockServer::start().await;
-
-        Mock::given(method("GET"))
-            .and(path("/health"))
-            .respond_with(ResponseTemplate::new(200).set_body_string("OK"))
-            .mount(&mock_server)
-            .await;
-
-        let target = create_test_target("test", &mock_server.uri());
-        let config = create_test_health_config();
-        let checker = HealthChecker::new(config);
-
-        let result = checker.check_target(&target).await;
-        assert!(result, "Target should be healthy");
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            let mock_server = MockServer::start().await;
+            Mock::given(method("GET")).and(path("/health")).respond_with(ResponseTemplate::new(200).set_body_string("OK")).mount(&mock_server).await;
+            let target = create_test_target("test", &mock_server.uri());
+            let config = create_test_health_config();
+            let checker = HealthChecker::new(config);
+            let result = checker.check_target(&target).await;
+            assert!(result, "Target should be healthy");
+        }).await.expect("test_healthy_target_check timed out");
     }
 
     #[tokio::test]
     async fn test_unhealthy_target_check() {
-        let mock_server = MockServer::start().await;
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            let mock_server = MockServer::start().await;
 
         Mock::given(method("GET"))
             .respond_with(ResponseTemplate::new(500).set_body_string("Internal Server Error"))
@@ -355,13 +352,15 @@ mod tests {
         let config = create_test_health_config();
         let checker = HealthChecker::new(config);
 
-        let result = checker.check_target(&target).await;
-        assert!(!result, "Target should be unhealthy");
+            let result = checker.check_target(&target).await;
+            assert!(!result, "Target should be unhealthy");
+        }).await.expect("test_unhealthy_target_check timed out");
     }
 
     #[tokio::test]
     async fn test_health_endpoint_fallback() {
-        let mock_server = MockServer::start().await;
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            let mock_server = MockServer::start().await;
 
         // /health returns 404, /healthz returns 200
         Mock::given(method("GET"))
@@ -380,13 +379,15 @@ mod tests {
         let config = create_test_health_config();
         let checker = HealthChecker::new(config);
 
-        let result = checker.check_target(&target).await;
-        assert!(result, "Target should be healthy via /healthz endpoint");
+            let result = checker.check_target(&target).await;
+            assert!(result, "Target should be healthy via /healthz endpoint");
+        }).await.expect("test_health_endpoint_fallback timed out");
     }
 
     #[tokio::test]
     async fn test_consecutive_failure_threshold() {
-        let mock_server = MockServer::start().await;
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            let mock_server = MockServer::start().await;
 
         Mock::given(method("GET"))
             .respond_with(ResponseTemplate::new(500))
@@ -413,12 +414,14 @@ mod tests {
         checker.check_single_target(&target).await;
         let status = checker.get_target_status(&target.name).await.unwrap();
         assert!(!status.is_healthy);
-        assert_eq!(status.consecutive_failures, 2);
+            assert_eq!(status.consecutive_failures, 2);
+        }).await.expect("test_consecutive_failure_threshold timed out");
     }
 
     #[tokio::test]
     async fn test_consecutive_success_threshold() {
-        let mock_server = MockServer::start().await;
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            let mock_server = MockServer::start().await;
         let request_count = Arc::new(AtomicU16::new(0));
         let _count_clone = Arc::clone(&request_count);
 
@@ -469,12 +472,14 @@ mod tests {
         checker.check_single_target(&target).await;
         let status = checker.get_target_status(&target.name).await.unwrap();
         assert!(status.is_healthy);
-        assert_eq!(status.consecutive_successes, 2);
+            assert_eq!(status.consecutive_successes, 2);
+        }).await.expect("test_consecutive_success_threshold timed out");
     }
 
     #[tokio::test]
     async fn test_response_time_recording() {
-        let mock_server = MockServer::start().await;
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            let mock_server = MockServer::start().await;
 
         Mock::given(method("GET"))
             .respond_with(
@@ -498,14 +503,16 @@ mod tests {
             response_time >= 100,
             "Response time should be at least 100ms"
         );
-        assert!(response_time < 1000, "Response time should be reasonable");
+            assert!(response_time < 1000, "Response time should be reasonable");
+        }).await.expect("test_response_time_recording timed out");
     }
 
     #[tokio::test]
     async fn test_error_message_recording() {
-        let target = create_test_target("test", "http://nonexistent.local:9999");
-        let config = create_test_health_config();
-        let checker = HealthChecker::new(config);
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            let target = create_test_target("test", "http://127.0.0.1:1");
+            let config = create_test_health_config();
+            let checker = HealthChecker::new(config);
 
         // Initialize the target with default healthy status first
         {
@@ -524,12 +531,14 @@ mod tests {
             "Should still be healthy after first failure"
         );
         assert_eq!(status.consecutive_failures, 1);
-        assert!(status.response_time_ms.is_none());
+            assert!(status.response_time_ms.is_none());
+        }).await.expect("test_error_message_recording timed out");
     }
 
     #[tokio::test]
     async fn test_custom_path_health_check() {
-        let mock_server = MockServer::start().await;
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            let mock_server = MockServer::start().await;
 
         Mock::given(method("GET"))
             .and(path("/custom/health"))
@@ -544,12 +553,14 @@ mod tests {
         let result = checker
             .check_target_with_custom_path(&target, "/custom/health")
             .await;
-        assert!(result, "Custom path health check should succeed");
+            assert!(result, "Custom path health check should succeed");
+        }).await.expect("test_custom_path_health_check timed out");
     }
 
     #[tokio::test]
     async fn test_redirection_as_healthy() {
-        let mock_server = MockServer::start().await;
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            let mock_server = MockServer::start().await;
 
         // Create a proper redirect: /health -> /healthz, and /healthz returns 200
         Mock::given(method("GET"))
@@ -570,15 +581,14 @@ mod tests {
 
         // Test that the health check can follow redirects and succeed
         let result = checker.check_target(&target).await;
-        assert!(
-            result,
-            "Health check should succeed after following redirect"
-        );
+            assert!(result, "Health check should succeed after following redirect");
+        }).await.expect("test_redirection_as_healthy timed out");
     }
 
     #[tokio::test]
     async fn test_concurrent_health_checks() {
-        let mock_server = MockServer::start().await;
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            let mock_server = MockServer::start().await;
 
         Mock::given(method("GET"))
             .respond_with(ResponseTemplate::new(200).set_body_string("OK"))
@@ -603,15 +613,17 @@ mod tests {
         checker.check_all_targets(&targets).await;
 
         // Verify all targets are healthy
-        for target in &targets {
-            let is_healthy = checker.is_target_healthy(&target.name).await;
-            assert!(is_healthy, "Target {} should be healthy", target.name);
-        }
+            for target in &targets {
+                let is_healthy = checker.is_target_healthy(&target.name).await;
+                assert!(is_healthy, "Target {} should be healthy", target.name);
+            }
+        }).await.expect("test_concurrent_health_checks timed out");
     }
 
     #[tokio::test]
     async fn test_get_all_health_status() {
-        let mock_server = MockServer::start().await;
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            let mock_server = MockServer::start().await;
 
         Mock::given(method("GET"))
             .respond_with(ResponseTemplate::new(200).set_body_string("OK"))
@@ -638,25 +650,27 @@ mod tests {
         assert!(all_status.contains_key("target1"));
         assert!(all_status.contains_key("target2"));
 
-        for (_, status) in all_status {
-            assert!(status.is_healthy);
-        }
+            for (_, status) in all_status {
+                assert!(status.is_healthy);
+            }
+        }).await.expect("test_get_all_health_status timed out");
     }
 
     #[tokio::test]
     async fn test_disabled_health_checks() {
-        let config = HealthCheckConfig {
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            let config = HealthCheckConfig {
             enabled: false,
             interval: 1,
             timeout: 5,
             healthy_threshold: 2,
             unhealthy_threshold: 3,
-        };
-        let checker = HealthChecker::new(config);
-        let targets = vec![create_test_target("test", "http://example.com")];
-
-        let result = checker.start_monitoring(targets).await;
-        assert!(result.is_ok(), "Disabled health checks should return Ok");
+            };
+            let checker = HealthChecker::new(config);
+            let targets = vec![create_test_target("test", "http://example.com")];
+            let result = checker.start_monitoring(targets).await;
+            assert!(result.is_ok(), "Disabled health checks should return Ok");
+        }).await.expect("test_disabled_health_checks timed out");
     }
 
     #[tokio::test]

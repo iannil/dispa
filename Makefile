@@ -1,7 +1,7 @@
 # Makefile for dispa project
 # Provides convenient commands for development and quality assurance
 
-.PHONY: help build test check fmt clippy clean qa install-tools pre-commit release
+.PHONY: help build test test-doc test-all check fmt clippy clean qa install-tools pre-commit release
 
 # Default target
 help:
@@ -11,7 +11,9 @@ help:
 	@echo "Development:"
 	@echo "  build      - Build the project in debug mode"
 	@echo "  release    - Build the project in release mode"
-	@echo "  test       - Run all tests"
+	@echo "  test       - Run unit and integration tests"
+	@echo "  test-doc   - Run documentation tests"
+	@echo "  test-all   - Run all tests (unit, integration, doc)"
 	@echo "  check      - Quick compilation check"
 	@echo "  run        - Run the project with default config"
 	@echo ""
@@ -41,12 +43,15 @@ release:
 
 # Test commands
 test:
-	@echo "🧪 Running tests..."
-	cargo test --verbose
+	@echo "🧪 Running unit and integration tests..."
+	cargo test --workspace --all-targets --verbose
 
 test-doc:
 	@echo "📚 Running documentation tests..."
-	cargo test --doc
+	cargo test --doc --verbose
+
+test-all: test test-doc
+	@echo "✅ All tests completed!"
 
 # Development commands
 check:

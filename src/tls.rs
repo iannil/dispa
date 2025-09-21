@@ -529,22 +529,24 @@ mod tests {
 
     #[tokio::test]
     async fn test_tls_manager_creation() {
-        let config = TlsConfig::default();
-        let manager = TlsManager::new(config);
-
-        assert!(!manager.is_enabled());
-        assert_eq!(manager.port(), 8443);
-        assert!(manager.acceptor().is_none());
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            let config = TlsConfig::default();
+            let manager = TlsManager::new(config);
+            assert!(!manager.is_enabled());
+            assert_eq!(manager.port(), 8443);
+            assert!(manager.acceptor().is_none());
+        }).await.expect("test_tls_manager_creation timed out");
     }
 
     #[tokio::test]
     async fn test_tls_manager_disabled_initialization() {
-        let config = TlsConfig::default();
-        let mut manager = TlsManager::new(config);
-
-        let result = manager.initialize().await;
-        assert!(result.is_ok());
-        assert!(manager.acceptor().is_none());
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            let config = TlsConfig::default();
+            let mut manager = TlsManager::new(config);
+            let result = manager.initialize().await;
+            assert!(result.is_ok());
+            assert!(manager.acceptor().is_none());
+        }).await.expect("test_tls_manager_disabled_initialization timed out");
     }
 
     #[test]
@@ -624,6 +626,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_certificate_file_validation_missing_files() {
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
         let config = TlsConfig {
             enabled: true,
             cert_path: Some("nonexistent.crt".to_string()),
@@ -634,6 +637,7 @@ mod tests {
         let manager = TlsManager::new(config);
         let result = manager.validate_certificates().await;
         assert!(result.is_err());
+        }).await.expect("test_certificate_file_validation_missing_files timed out");
     }
 
     #[test]

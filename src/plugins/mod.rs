@@ -13,6 +13,7 @@ pub enum PluginResult {
 }
 
 pub trait RequestPlugin: Send + Sync {
+    #[allow(dead_code)]
     fn name(&self) -> &str;
     fn on_request(&self, req: &mut Request<Body>) -> PluginResult;
     /// Optional hook for reporting if last invocation had an internal error
@@ -23,6 +24,7 @@ pub trait RequestPlugin: Send + Sync {
 }
 
 pub trait ResponsePlugin: Send + Sync {
+    #[allow(dead_code)]
     fn name(&self) -> &str;
     fn on_response(&self, resp: &mut Response<Body>);
     /// See RequestPlugin::last_error_and_clear
@@ -39,13 +41,24 @@ mod wasm_support {
     use wasmtime::{Engine, Linker, Module, Store};
     use wasmtime_wasi::WasiCtxBuilder;
 
-    #[derive(Clone)]
     pub struct WasmPlugin {
         name: String,
         module_path: String,
         timeout_ms: u64,
         semaphore: Option<Arc<Semaphore>>,
         last_error: std::sync::atomic::AtomicBool,
+    }
+
+    impl Clone for WasmPlugin {
+        fn clone(&self) -> Self {
+            Self {
+                name: self.name.clone(),
+                module_path: self.module_path.clone(),
+                timeout_ms: self.timeout_ms,
+                semaphore: self.semaphore.clone(),
+                last_error: std::sync::atomic::AtomicBool::new(self.last_error.load(std::sync::atomic::Ordering::SeqCst)),
+            }
+        }
     }
 
     impl WasmPlugin {
@@ -80,9 +93,7 @@ mod wasm_support {
 
             let bytes = input.as_bytes();
             let ptr = alloc.call(&mut store, bytes.len() as i32)?;
-            unsafe {
-                memory.data_mut(&mut store)[ptr as usize..ptr as usize + bytes.len()].copy_from_slice(bytes);
-            }
+            memory.data_mut(&mut store)[ptr as usize..ptr as usize + bytes.len()].copy_from_slice(bytes);
             let out_ptr = guest.call(&mut store, (ptr, bytes.len() as i32))?;
             let out_len = get_len.call(&mut store, ())?;
             let out = memory.data(&store)[out_ptr as usize..out_ptr as usize + out_len as usize].to_vec();
@@ -97,7 +108,7 @@ mod wasm_support {
         fn name(&self) -> &str { &self.name }
         fn on_request(&self, req: &mut Request<Body>) -> PluginResult {
             let _permit = if let Some(sem) = &self.semaphore {
-                tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(sem.acquire_owned())).ok()
+                tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(sem.clone().acquire_owned())).ok()
             } else { None };
             let mut hdr_map = serde_json::Map::new();
             for (k, v) in req.headers().iter() { if let Ok(val) = v.to_str() { hdr_map.insert(k.as_str().to_string(), Value::String(val.to_string())); } }
@@ -118,7 +129,7 @@ mod wasm_support {
         fn name(&self) -> &str { &self.name }
         fn on_response(&self, resp: &mut Response<Body>) {
             let _permit = if let Some(sem) = &self.semaphore {
-                tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(sem.acquire_owned())).ok()
+                tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(sem.clone().acquire_owned())).ok()
             } else { None };
             let mut hdr_map = serde_json::Map::new();
             for (k, v) in resp.headers().iter() { if let Ok(val) = v.to_str() { hdr_map.insert(k.as_str().to_string(), Value::String(val.to_string())); } }
@@ -318,6 +329,11 @@ impl PluginEngine {
         }
     }
 
+    /// Return the names of all configured response plugins in their execution order
+    pub fn response_plugin_names(&self) -> Vec<String> {
+        self.response_plugins.iter().map(|e| e.name.clone()).collect()
+    }
+
     /// Apply only selected request plugins by name, in the provided order
     pub async fn apply_request_subset(&self, names: &[String], req: &mut Request<Body>) -> PluginResult {
         for name in names {
@@ -415,7 +431,8 @@ mod tests {
     fn engine_with_request_entries(mut entries: Vec<PluginRequestEntry>) -> PluginEngine {
         let mut idx = std::collections::HashMap::new();
         for (i, e) in entries.iter().enumerate() { idx.insert(e.name.clone(), i); }
-        PluginEngine { request_plugins: entries.drain(..).collect(), response_plugins: vec![], apply_before_domain_match: true, request_index: idx, response_index: std::collections::HashMap::new() }
+        let request_plugins = std::mem::take(&mut entries);
+        PluginEngine { request_plugins, response_plugins: vec![], apply_before_domain_match: true, request_index: idx, response_index: std::collections::HashMap::new() }
     }
 
     struct ShortCircuitPlugin;
@@ -435,7 +452,7 @@ mod tests {
         ]);
         let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
         let mut req = Request::new(Body::empty());
-        match rt.block_on(engine.apply_request_subset(&vec!["sc".into()], &mut req)) {
+        match rt.block_on(engine.apply_request_subset(&["sc".into()], &mut req)) {
             PluginResult::ShortCircuit(resp) => assert_eq!(resp.status(), StatusCode::IM_A_TEAPOT),
             _ => panic!("expected short circuit from subset plugin"),
         }
@@ -492,14 +509,15 @@ mod tests {
     #[test]
     fn test_apply_before_domain_match_flag_kept() {
         let engine = PluginEngine { request_plugins: vec![], response_plugins: vec![], apply_before_domain_match: false, request_index: std::collections::HashMap::new(), response_index: std::collections::HashMap::new() };
-        assert_eq!(engine.apply_before_domain_match(), false);
+        assert!(!engine.apply_before_domain_match());
         let engine2 = PluginEngine { request_plugins: vec![], response_plugins: vec![], apply_before_domain_match: true, request_index: std::collections::HashMap::new(), response_index: std::collections::HashMap::new() };
-        assert_eq!(engine2.apply_before_domain_match(), true);
+        assert!(engine2.apply_before_domain_match());
     }
 }
 
 #[derive(Clone)]
 struct HeaderInjector {
+    #[allow(dead_code)]
     name: String,
     req_headers: Vec<(String, String)>,
     resp_headers: Vec<(String, String)>,
@@ -557,6 +575,7 @@ impl ResponsePlugin for HeaderInjector {
 }
 
 struct Blocklist {
+    #[allow(dead_code)]
     name: String,
     hosts: Vec<String>,
     paths: Vec<String>,
@@ -594,7 +613,7 @@ impl RequestPlugin for Blocklist {
 }
 
 #[derive(Clone)]
-struct PathRewrite { name: String, from_prefix: String, to_prefix: String }
+struct PathRewrite { #[allow(dead_code)] name: String, from_prefix: String, to_prefix: String }
 impl PathRewrite {
     fn from_config(name: &str, cfg: Option<&Value>) -> Result<Self> {
         let from = cfg.and_then(|v| v.get("from_prefix")).and_then(|x| x.as_str()).unwrap_or("").to_string();
@@ -621,7 +640,7 @@ impl RequestPlugin for PathRewrite {
 }
 
 #[derive(Clone)]
-struct HostRewrite { name: String, host: String }
+struct HostRewrite { #[allow(dead_code)] name: String, host: String }
 impl HostRewrite {
     fn from_config(name: &str, cfg: Option<&Value>) -> Result<Self> {
         let host = cfg.and_then(|v| v.get("host")).and_then(|x| x.as_str()).unwrap_or("").to_string();
@@ -639,6 +658,7 @@ impl RequestPlugin for HostRewrite {
 }
 
 struct RateLimiter {
+    #[allow(dead_code)]
     name: String,
     rate_per_sec: f64,
     burst: f64,
@@ -681,7 +701,6 @@ impl RequestPlugin for RateLimiter {
 
 // ------------------ Command Plugin (external executable) ------------------
 #[cfg(feature = "cmd-plugin")]
-#[derive(Clone)]
 struct CommandPlugin {
     name: String,
     exec: String,
@@ -693,6 +712,23 @@ struct CommandPlugin {
     env: Option<std::collections::BTreeMap<String, String>>,
     // Track last invocation error for error_strategy enforcement
     last_error: std::sync::atomic::AtomicBool,
+}
+
+#[cfg(feature = "cmd-plugin")]
+impl Clone for CommandPlugin {
+    fn clone(&self) -> Self {
+        Self {
+            name: self.name.clone(),
+            exec: self.exec.clone(),
+            args: self.args.clone(),
+            timeout_ms: self.timeout_ms,
+            semaphore: self.semaphore.clone(),
+            exec_allowlist: self.exec_allowlist.clone(),
+            cwd: self.cwd.clone(),
+            env: self.env.clone(),
+            last_error: std::sync::atomic::AtomicBool::new(self.last_error.load(std::sync::atomic::Ordering::SeqCst)),
+        }
+    }
 }
 
 #[cfg(feature = "cmd-plugin")]
@@ -726,7 +762,7 @@ impl CommandPlugin {
                 return Err(anyhow::anyhow!("exec not in allowlist"));
             }
         }
-        let _permit = if let Some(sem) = &self.semaphore { Some(sem.acquire_owned().await?) } else { None };
+        let _permit = if let Some(sem) = &self.semaphore { Some(sem.clone().acquire_owned().await?) } else { None };
         let mut child = Command::new(&self.exec)
             .args(&self.args)
             .stdin(std::process::Stdio::piped())

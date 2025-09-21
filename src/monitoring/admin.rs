@@ -102,7 +102,7 @@ async fn config_set(mut req: Request<Body>) -> Result<Response<Body>, hyper::htt
             return Response::builder().status(StatusCode::BAD_REQUEST).body(Body::from("Empty body"));
         }
         // Best-effort: Write to config file path; file watcher will reload
-        let ok = match tokio::fs::write(&state.config_path, &bytes).await { Ok(_) => true, Err(_) => false };
+        let ok = tokio::fs::write(&state.config_path, &bytes).await.is_ok();
         audit(&req, ok, bytes.len(), "/admin/config").await;
         if ok { Response::builder().status(StatusCode::OK).body(Body::from("OK")) } else { Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).body(Body::from("Failed to write config")) }
     } else {
@@ -145,9 +145,29 @@ async fn config_set_json(mut req: Request<Body>) -> Result<Response<Body>, hyper
                         if let Ok(mut v) = serde_json::from_slice::<serde_json::Value>(&bytes) {
                             if let Some(routing) = v.get_mut("routing") { cfg.routing = serde_json::from_value(routing.take()).ok(); }
                             if let Some(plugins) = v.get_mut("plugins") { cfg.plugins = serde_json::from_value(plugins.take()).ok(); }
-                            if let Some(security) = v.get_mut("security") { cfg.security = serde_json::from_value(security.take()).ok(); }
+                            // Merge security section partially if provided
+                            if let Some(security) = v.get_mut("security") {
+                                if let Some(obj) = security.as_object() {
+                                    if let Some(existing) = cfg.security.clone() {
+                                        let mut merged = existing;
+                                        if let Some(rl_val) = obj.get("rate_limit") {
+                                            merged.rate_limit = serde_json::from_value(rl_val.clone()).ok();
+                                        }
+                                        if let Some(enabled_val) = obj.get("enabled") {
+                                            if let Some(b) = enabled_val.as_bool() { merged.enabled = b; }
+                                        }
+                                        cfg.security = Some(merged);
+                                    } else {
+                                        // Try to parse full security object if complete
+                                        if let Ok(parsed) = serde_json::from_value::<crate::security::SecurityConfig>(security.clone()) {
+                                            cfg.security = Some(parsed);
+                                        }
+                                    }
+                                }
+                                let _ = security.take();
+                            }
                             let toml_str = toml::to_string_pretty(&cfg).unwrap_or_else(|_| content.clone());
-                            let ok = match tokio::fs::write(&state.config_path, toml_str).await { Ok(_) => true, Err(_) => false };
+                            let ok = tokio::fs::write(&state.config_path, toml_str).await.is_ok();
                             audit(&req, ok, bytes.len(), "/admin/config/json").await;
                             if ok { Response::builder().status(StatusCode::OK).body(Body::from("OK")) } else { Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).body(Body::from("Failed to write config")) }
                         } else {
@@ -357,12 +377,15 @@ async fn role_of(req: &Request<Body>) -> Option<String> {
 }
 
 async fn authorized(req: &Request<Body>) -> bool {
-    // 1) Prefer env token (DISPA_ADMIN_TOKEN)
+    // Accept any known role token for authorization; role-based checks
+    // (admin/editor/viewer) are applied per-endpoint.
     if let Some(Some(tok)) = ADMIN_TOKEN.get() {
         if has_token(req, tok) { return true; }
-        return false;
     }
-    // 2) Fallback: reuse security.auth if present in config
+    if let Ok(v) = std::env::var("DISPA_EDITOR_TOKEN") { if has_token(req, &v) { return true; } }
+    if let Ok(v) = std::env::var("DISPA_VIEWER_TOKEN") { if has_token(req, &v) { return true; } }
+
+    // Fallback: reuse security.auth if present in config
     if let Some(state) = ADMIN_STATE.get() {
         if let Ok(content) = tokio::fs::read_to_string(&state.config_path).await {
             if let Ok(cfg) = toml::from_str::<Config>(&content) {
@@ -383,11 +406,25 @@ async fn authorized(req: &Request<Body>) -> bool {
 }
 
 fn has_token(req: &Request<Body>, tok: &str) -> bool {
-    if let Some(h) = req.headers().get("x-admin-token") { if let Ok(v)=h.to_str(){ if v==tok { return true; } } }
-    if let Some(h) = req.headers().get("authorization") { if let Ok(v)=h.to_str(){ if let Some(b) = v.strip_prefix("Bearer ").or_else(|| v.strip_prefix("bearer ")){ if b==tok { return true; } } if let Some(b64)=v.strip_prefix("Basic "){
-        // very naive basic: expecting admin:token
-        if let Ok(decoded)=basic_decode(b64){ if decoded.ends_with(&format!(":{}", tok)) { return true; } }
-    } } }
+    // Header x-admin-token takes precedence
+    if let Some(h) = req.headers().get("x-admin-token") {
+        if let Ok(v) = h.to_str() {
+            if v == tok { return true; }
+        }
+    }
+    // Authorization: Bearer/Basic
+    if let Some(h) = req.headers().get("authorization") {
+        if let Ok(v) = h.to_str() {
+            if let Some(b) = v.strip_prefix("Bearer ").or_else(|| v.strip_prefix("bearer ")) {
+                if b == tok { return true; }
+            } else if let Some(b64) = v.strip_prefix("Basic ") {
+                // very naive basic: expecting admin:token
+                if let Ok(decoded) = basic_decode(b64) {
+                    if decoded.ends_with(&format!(":{}", tok)) { return true; }
+                }
+            }
+        }
+    }
     false
 }
 
@@ -405,7 +442,7 @@ fn basic_decode(s: &str) -> Result<String, ()> {
         }
     }
     let bytes = s.as_bytes();
-    if bytes.len() % 4 != 0 { return Err(()); }
+    if !bytes.len().is_multiple_of(4) { return Err(()); }
     let mut out = Vec::with_capacity(bytes.len()/4*3);
     let mut i = 0;
     while i < bytes.len() {
@@ -428,6 +465,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_admin_rbac_and_config_json_merge() {
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(10), async {
         // Prepare temp config file
         let mut cfg = crate::config::Config::default_config();
         // Add security section for redaction test
@@ -483,5 +521,6 @@ mod tests {
         let req = Request::builder().method("POST").uri("/admin/config/json").header("x-admin-token","vw").header("content-type","application/json").body(Body::from("{}".to_string())).unwrap();
         let resp = super::handle_admin(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+        }).await.expect("test_admin_rbac_and_config_json_merge timed out");
     }
 }
