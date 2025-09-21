@@ -94,7 +94,8 @@ retention_days = 30
 # 数据库日志配置 (当type为database或both时使用)
 [logging.database]
 # 数据库连接URL
-# SQLite: sqlite://./data/traffic.db
+# SQLite (file): sqlite://./data/traffic.db
+# SQLite (memory): sqlite::memory:
 # PostgreSQL: postgresql://user:password@localhost:5432/dispa
 url = "sqlite://./data/traffic.db"
 

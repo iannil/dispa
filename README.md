@@ -76,6 +76,7 @@ curl http://localhost:9090/metrics
 - **[快速开始指南](QUICKSTART.md)** - 5分钟上手教程
 - **[完整用户手册](USER_MANUAL.md)** - 详细配置和使用说明
 - **[开发指南](DEVELOPMENT.md)** - 架构设计和扩展开发
+- **[数据库指南](docs/DATABASE.md)** - SQLite / PostgreSQL 连接与迁移
 
 ## 🏗️ 架构
 
