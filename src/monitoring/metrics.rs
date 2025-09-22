@@ -94,8 +94,8 @@ impl MetricsCollector {
         // Connection metrics
         metrics::gauge!("dispa_active_connections_total")
             .set(summary.total_active_connections as f64);
-        metrics::counter!("dispa_requests_total").increment(summary.total_requests);
-        metrics::counter!("dispa_errors_total").increment(summary.total_errors);
+        metrics::gauge!("dispa_requests_total").set(summary.total_requests as f64);
+        metrics::gauge!("dispa_errors_total").set(summary.total_errors as f64);
         metrics::gauge!("dispa_error_rate_percent").set(summary.error_rate);
 
         // Per-target metrics
@@ -124,10 +124,10 @@ impl MetricsCollector {
             metrics::gauge!("dispa_target_active_connections", &labels)
                 .set(stats.active_connections as f64);
 
-            metrics::counter!("dispa_target_requests_total", &labels)
-                .increment(stats.total_requests);
+            metrics::gauge!("dispa_target_requests_total", &labels)
+                .set(stats.total_requests as f64);
 
-            metrics::counter!("dispa_target_errors_total", &labels).increment(stats.total_errors);
+            metrics::gauge!("dispa_target_errors_total", &labels).set(stats.total_errors as f64);
 
             metrics::gauge!("dispa_target_avg_response_time_ms", &labels)
                 .set(stats.avg_response_time_ms);
@@ -1034,6 +1034,7 @@ mod tests {
             metrics_port: 9090,
             health_check_port: 8081,
             histogram_buckets: None,
+            capacity: Default::default(),
         };
 
         assert!(config.enabled);

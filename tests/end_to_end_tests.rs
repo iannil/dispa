@@ -64,6 +64,7 @@ fn create_end_to_end_test_config(target_urls: Vec<String>) -> Config {
             metrics_port: 9090,
             health_check_port: 8081,
             histogram_buckets: None,
+            capacity: Default::default(),
         },
         tls: None,
         routing: None,
@@ -350,12 +351,14 @@ async fn test_monitoring_integration() {
             metrics_port: 9090,
             health_check_port: 8081,
             histogram_buckets: None,
+            capacity: Default::default(),
         },
         MonitoringConfig {
             enabled: true,
             metrics_port: 0,      // Auto-assign
             health_check_port: 0, // Auto-assign
             histogram_buckets: None,
+            capacity: Default::default(),
         },
     ];
 

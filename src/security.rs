@@ -1,9 +1,16 @@
+pub mod enhanced_auth;
+
 use hyper::{Body, Request, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::time::Instant;
 use tokio::sync::RwLock;
+
+pub use enhanced_auth::{
+    EnhancedSecurityConfig, EnhancedSecurityManager, AdminAuthConfig, AdminUser, AdminRole,
+    SessionConfig, MfaConfig, PasswordPolicyConfig, AuditConfig, AuthResult
+};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct SecurityConfig {

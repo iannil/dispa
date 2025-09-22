@@ -188,25 +188,35 @@ impl LoadBalancer {
             return Some(healthy_targets[0].clone());
         }
 
-        // Smooth weighted round robin algorithm
+        // Smooth weighted round robin algorithm (fixed)
         let mut state = self.weighted_state.write().await;
         let mut max_weight = -1;
         let mut selected_index = 0;
 
-        // Create a mapping from healthy targets to original indices
+        // Calculate total weight for proper normalization
+        let total_weight: i32 = healthy_targets
+            .iter()
+            .map(|target| target.weight.unwrap_or(1) as i32)
+            .sum();
+
+        // Find target index mapping
         let target_indices: Vec<usize> = healthy_targets
             .iter()
             .filter_map(|target| self.targets.iter().position(|t| t.name == target.name))
             .collect();
 
+        // Ensure state arrays are properly sized
+        if state.current_weights.len() < self.targets.len() {
+            state.current_weights.resize(self.targets.len(), 0);
+        }
+
         // Find the target with the highest current weight
         for (i, &original_index) in target_indices.iter().enumerate() {
-            let weight = target_indices
-                .get(original_index)
-                .and_then(|&idx| self.targets.get(idx))
-                .and_then(|target| target.weight)
-                .unwrap_or(1) as i32;
+            if original_index >= self.targets.len() {
+                continue; // Skip invalid indices
+            }
 
+            let weight = healthy_targets[i].weight.unwrap_or(1) as i32;
             state.current_weights[original_index] += weight;
 
             if state.current_weights[original_index] > max_weight {
@@ -215,12 +225,14 @@ impl LoadBalancer {
             }
         }
 
-        // Decrease the selected target's current weight
+        // Decrease the selected target's current weight by total weight
         if let Some(&original_index) = target_indices.get(selected_index) {
-            state.current_weights[original_index] -= state.total_weight;
+            if original_index < state.current_weights.len() {
+                state.current_weights[original_index] -= total_weight;
+            }
         }
 
-        Some(healthy_targets[selected_index].clone())
+        healthy_targets.get(selected_index).cloned()
     }
 
     pub async fn random_select(&self, healthy_targets: &[Target]) -> Option<Target> {
@@ -228,8 +240,10 @@ impl LoadBalancer {
             return None;
         }
 
-        // Use current time as a simple random source
-        let index = (Instant::now().elapsed().as_nanos() % healthy_targets.len() as u128) as usize;
+        // Use a proper random number generator instead of time-based
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+        let index = rng.gen_range(0..healthy_targets.len());
         Some(healthy_targets[index].clone())
     }
 
@@ -411,6 +425,75 @@ impl LoadBalancer {
     #[cfg(test)]
     pub fn health_checker(&self) -> &super::health_check::HealthChecker {
         &self.health_checker
+    }
+
+    /// Clean up expired connection statistics and unused target data
+    /// Should be called periodically to prevent memory leaks
+    pub async fn cleanup_expired_data(&self) {
+        let now = Instant::now();
+        let retention_duration = Duration::from_secs(3600); // 1 hour
+
+        // Get current target names for comparison
+        let current_target_names: std::collections::HashSet<String> =
+            self.targets.iter().map(|t| t.name.clone()).collect();
+
+        // Clean up connection stats
+        {
+            let mut stats = self.connection_stats.write().await;
+            stats.retain(|target_name, target_stats| {
+                // Keep if target still exists in config
+                if current_target_names.contains(target_name) {
+                    return true;
+                }
+
+                // Keep if recently active (within retention period)
+                if let Some(last_request) = target_stats.last_request {
+                    if now.duration_since(last_request) < retention_duration {
+                        return true;
+                    }
+                }
+
+                // Remove old, unused target stats
+                debug!("Cleaning up stats for removed target: {}", target_name);
+                false
+            });
+        }
+
+        // Clean up weighted round robin state for removed targets
+        {
+            let mut state = self.weighted_state.write().await;
+
+            // Resize arrays to match current target count
+            if state.current_weights.len() > self.targets.len() {
+                state.current_weights.truncate(self.targets.len());
+            }
+
+            // Recalculate total weight for active targets
+            state.total_weight = self.targets
+                .iter()
+                .map(|target| target.weight.unwrap_or(1) as i32)
+                .sum();
+        }
+
+        // Trigger health checker cleanup
+        self.health_checker.cleanup_expired_data(&current_target_names).await;
+
+        debug!("LoadBalancer data cleanup completed");
+    }
+
+    /// Update target configuration and clean up orphaned data
+    pub async fn update_targets(&self, new_targets: Vec<Target>) {
+        // This method would be called when configuration is reloaded
+        // For now, we'll just note that it should update self.targets
+        // and call cleanup_expired_data()
+
+        debug!("Target configuration update requested with {} targets", new_targets.len());
+        // In a full implementation, this would:
+        // 1. Update self.targets (requires making it mutable or using RwLock)
+        // 2. Call cleanup_expired_data()
+        // 3. Reinitialize health checker with new targets
+
+        self.cleanup_expired_data().await;
     }
 }
 

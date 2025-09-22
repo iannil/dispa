@@ -283,6 +283,19 @@ impl HealthChecker {
     pub fn stop(&self) {
         self.shutdown.store(true, Ordering::SeqCst);
     }
+
+    /// Clean up health status for targets that no longer exist
+    pub async fn cleanup_expired_data(&self, current_target_names: &std::collections::HashSet<String>) {
+        let mut health_status = self.health_status.write().await;
+        health_status.retain(|target_name, _| {
+            if current_target_names.contains(target_name) {
+                true
+            } else {
+                debug!("Cleaning up health status for removed target: {}", target_name);
+                false
+            }
+        });
+    }
 }
 
 #[cfg(test)]

@@ -14,7 +14,7 @@ pub mod tls;
 pub mod security;
 
 // Re-export commonly used types
-pub use cache::{CacheConfig, CacheEntry, CacheMetrics, CachePolicy, CachePolicyPattern};
+pub use cache::{CacheConfig, CacheEntry, CacheMetrics, CachePolicy, CachePolicyPattern, ETagManager, InMemoryCache, PolicyEngine};
 pub use circuit_breaker::{
     CircuitBreaker, CircuitBreakerConfig, CircuitBreakerState, CircuitBreakerStats,
 };

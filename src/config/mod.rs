@@ -317,6 +317,9 @@ pub struct MonitoringConfig {
     /// Optional per-metric histogram bucket configuration (milliseconds)
     #[serde(default)]
     pub histogram_buckets: Option<Vec<HistogramBucketsConfig>>,
+    /// Capacity monitoring configuration
+    #[serde(default)]
+    pub capacity: CapacityConfig,
 }
 
 /// Histogram bucket configuration for a specific metric (values in milliseconds)
@@ -326,6 +329,74 @@ pub struct HistogramBucketsConfig {
     pub metric: String,
     /// Bucket upper bounds (ms) in ascending order
     pub buckets_ms: Vec<f64>,
+}
+
+/// Capacity monitoring configuration
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CapacityConfig {
+    /// Maximum connections per target for capacity ratio calculation
+    #[serde(default = "default_max_connections_per_target")]
+    pub max_connections_per_target: u32,
+    /// Global maximum connections limit for resource utilization calculation
+    #[serde(default = "default_global_max_connections")]
+    pub global_max_connections: u32,
+    /// Maximum duration samples for percentile calculation
+    #[serde(default = "default_max_duration_samples")]
+    pub max_duration_samples: usize,
+    /// Memory usage estimation parameters
+    #[serde(default)]
+    pub memory: MemoryCapacityConfig,
+}
+
+/// Memory capacity monitoring configuration
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct MemoryCapacityConfig {
+    /// Estimated memory per connection in bytes
+    #[serde(default = "default_memory_per_connection")]
+    pub memory_per_connection: u64,
+    /// Target memory usage warning threshold (bytes)
+    #[serde(default = "default_memory_warning_threshold")]
+    pub warning_threshold: u64,
+}
+
+fn default_max_connections_per_target() -> u32 {
+    1000
+}
+
+fn default_global_max_connections() -> u32 {
+    1000
+}
+
+fn default_max_duration_samples() -> usize {
+    10000
+}
+
+fn default_memory_per_connection() -> u64 {
+    65536 // 64KB per connection
+}
+
+fn default_memory_warning_threshold() -> u64 {
+    1_073_741_824 // 1GB
+}
+
+impl Default for CapacityConfig {
+    fn default() -> Self {
+        Self {
+            max_connections_per_target: default_max_connections_per_target(),
+            global_max_connections: default_global_max_connections(),
+            max_duration_samples: default_max_duration_samples(),
+            memory: MemoryCapacityConfig::default(),
+        }
+    }
+}
+
+impl Default for MemoryCapacityConfig {
+    fn default() -> Self {
+        Self {
+            memory_per_connection: default_memory_per_connection(),
+            warning_threshold: default_memory_warning_threshold(),
+        }
+    }
 }
 
 impl MonitoringConfig {
@@ -843,6 +914,7 @@ impl Config {
                 metrics_port: 9090,
                 health_check_port: 8081,
                 histogram_buckets: None,
+                capacity: Default::default(),
             },
             tls: None,
             routing: None,

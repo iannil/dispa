@@ -63,6 +63,7 @@ fn create_integration_test_config() -> Config {
             metrics_port: 9090,
             health_check_port: 8081,
             histogram_buckets: None,
+            capacity: Default::default(),
         },
         tls: None,
         routing: None,
@@ -117,6 +118,7 @@ fn create_minimal_test_config() -> Config {
             metrics_port: 9090,
             health_check_port: 8081,
             histogram_buckets: None,
+            capacity: Default::default(),
         },
         tls: None,
         routing: None,
@@ -486,6 +488,7 @@ async fn test_complete_configuration_integration() {
             metrics_port: 9090,
             health_check_port: 8081,
             histogram_buckets: None,
+            capacity: Default::default(),
         },
         tls: None,
         routing: None,
@@ -551,6 +554,7 @@ async fn test_configuration_edge_cases_integration() {
             metrics_port: 1024,      // Minimum non-privileged port
             health_check_port: 1025, // Minimum non-privileged port + 1
             histogram_buckets: None,
+            capacity: Default::default(),
         },
         tls: None,
         routing: None,

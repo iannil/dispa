@@ -1,10 +1,12 @@
 use anyhow::Result;
 use clap::Parser;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use tokio::signal;
 use tracing::{info, warn};
 
 mod balancer;
+mod cache;
 mod circuit_breaker;
 mod config;
 mod error;
@@ -23,6 +25,18 @@ use crate::plugins::PluginEngine;
 use crate::proxy::http_client;
 use proxy::ProxyServer;
 use crate::monitoring::admin::{self, AdminState};
+
+/// Shared application state to reduce Arc cloning
+#[derive(Clone)]
+struct AppState {
+    pub domain_handle: Arc<std::sync::RwLock<config::DomainConfig>>,
+    pub lb_handle: Arc<tokio::sync::RwLock<balancer::LoadBalancer>>,
+    pub routing_handle: Arc<tokio::sync::RwLock<Option<routing::RoutingEngine>>>,
+    pub plugins_handle: Arc<tokio::sync::RwLock<Option<plugins::PluginEngine>>>,
+    pub security_handle: Arc<tokio::sync::RwLock<Option<security::SecurityManager>>>,
+    pub metrics_handle: Arc<tokio::sync::RwLock<Option<tokio::task::JoinHandle<()>>>>,
+    pub traffic_logger: logger::TrafficLogger,
+}
 
 #[derive(Parser)]
 #[command(name = "dispa")]
@@ -58,57 +72,61 @@ async fn main() -> Result<()> {
     http_client::init(config.http_client.as_ref());
 
     // Start monitoring server (track handle for hot-reload restart)
-    let metrics_handle = std::sync::Arc::new(tokio::sync::RwLock::new(Some(
+    let metrics_handle = Arc::new(tokio::sync::RwLock::new(Some(
         monitoring::start_metrics_server(config.monitoring.clone()).await?,
     )));
 
     // Create and start proxy server
     let mut traffic_logger = logger::TrafficLogger::new(config.logging.clone());
     traffic_logger.initialize().await?;
-    let traffic_logger_handle = traffic_logger.clone();
 
-    let proxy_server = ProxyServer::new(config, args.bind, traffic_logger);
-    let lb_handle = proxy_server.load_balancer_handle();
-    let routing_handle = proxy_server.routing_engine_handle();
-    let domain_handle = proxy_server.domain_config_handle();
-    let plugins_handle = proxy_server.plugins_handle();
-    let security_handle = proxy_server.security_handle();
+    let proxy_server = ProxyServer::new(config, args.bind, traffic_logger.clone());
 
-    // Initialize admin state with accurate config path
+    // Create app state to centralize shared handles
+    let app_state = AppState {
+        domain_handle: proxy_server.domain_config_handle(),
+        lb_handle: proxy_server.load_balancer_handle(),
+        routing_handle: proxy_server.routing_engine_handle(),
+        plugins_handle: proxy_server.plugins_handle(),
+        security_handle: proxy_server.security_handle(),
+        metrics_handle,
+        traffic_logger,
+    };
+
+    // Initialize admin state with references from app_state
     admin::init_admin(AdminState{
         config_path: std::path::PathBuf::from(&args.config),
-        domain_config: std::sync::Arc::clone(&domain_handle),
-        load_balancer: std::sync::Arc::clone(&lb_handle),
-        routing_engine: std::sync::Arc::clone(&routing_handle),
-        plugins: std::sync::Arc::clone(&plugins_handle),
-        security: std::sync::Arc::clone(&security_handle),
+        domain_config: app_state.domain_handle.clone(),
+        load_balancer: app_state.lb_handle.clone(),
+        routing_engine: app_state.routing_handle.clone(),
+        plugins: app_state.plugins_handle.clone(),
+        security: app_state.security_handle.clone(),
     });
-    let security_handle = proxy_server.security_handle();
 
     // Cluster support removed
 
     // Set reload hook now that we have handles
-    let metrics_handle_clone = std::sync::Arc::clone(&metrics_handle);
+    let state_for_reload = app_state.clone();
     cfg_manager.set_reload_hook(move |cfg: &Config| {
         // Re-init HTTP client pool
         http_client::init(cfg.http_client.as_ref());
         tracing::info!("HTTP client pool re-initialized from reloaded config");
 
         // Rebuild load balancer
-        let lb_handle_for_rebuild = std::sync::Arc::clone(&lb_handle);
+        let lb_handle = state_for_reload.lb_handle.clone();
         let targets = cfg.targets.clone();
         tokio::spawn(async move {
             let new_lb = crate::balancer::LoadBalancer::new(targets);
-            let mut guard = lb_handle_for_rebuild.write().await;
+            let mut guard = lb_handle.write().await;
             *guard = new_lb;
             tracing::info!("Load balancer reloaded from new config");
         });
 
         // Update routing engine from new config
-        let routing_handle_clone = std::sync::Arc::clone(&routing_handle);
+        let routing_handle = state_for_reload.routing_handle.clone();
         let routing_cfg = cfg.routing.clone();
         tokio::spawn(async move {
-            let mut guard = routing_handle_clone.write().await;
+            let mut guard = routing_handle.write().await;
             match routing_cfg {
                 Some(rc) => match crate::routing::RoutingEngine::new(rc) {
                     Ok(engine) => {
@@ -129,16 +147,16 @@ async fn main() -> Result<()> {
 
         // Update domain intercept config
         let domain_cfg = cfg.domains.clone();
-        let domain_handle_clone = std::sync::Arc::clone(&domain_handle);
+        let domain_handle = state_for_reload.domain_handle.clone();
         tokio::spawn(async move {
-            if let Ok(mut guard) = domain_handle_clone.write() {
+            if let Ok(mut guard) = domain_handle.write() {
                 *guard = domain_cfg;
                 tracing::info!("Domain configuration reloaded from new config");
             }
         });
 
         // Reconfigure traffic logger
-        let logger = traffic_logger_handle.clone();
+        let logger = state_for_reload.traffic_logger.clone();
         let log_cfg = cfg.logging.clone();
         tokio::spawn(async move {
             if let Err(e) = logger.reconfigure(log_cfg).await {
@@ -150,33 +168,31 @@ async fn main() -> Result<()> {
 
         // Rebuild plugin engine
         let plugins_cfg = cfg.plugins.clone();
-        let plugins_handle_clone = std::sync::Arc::clone(&plugins_handle);
+        let plugins_handle = state_for_reload.plugins_handle.clone();
         tokio::spawn(async move {
             let engine = match plugins_cfg {
                 Some(pc) => PluginEngine::new(&pc).ok(),
                 None => None,
             };
-            *plugins_handle_clone.write().await = engine;
+            *plugins_handle.write().await = engine;
             tracing::info!("Plugin engine reloaded from new config");
         });
 
         // Rebuild security manager
         let security_cfg = cfg.security.clone();
-        // Avoid type inference issue by explicitly annotating the handle type
-        let security_handle_clone: std::sync::Arc<tokio::sync::RwLock<Option<crate::security::SecurityManager>>> =
-            std::sync::Arc::clone(&security_handle);
+        let security_handle = state_for_reload.security_handle.clone();
         tokio::spawn(async move {
             let mgr = match security_cfg {
                 Some(sc) => Some(crate::security::SecurityManager::new(sc)),
                 None => None,
             };
-            *security_handle_clone.write().await = mgr;
+            *security_handle.write().await = mgr;
             tracing::info!("Security manager reloaded from new config");
         });
 
         // Restart monitoring server with new ports (best-effort)
         let monitoring_cfg = cfg.monitoring.clone();
-        let metrics_handle = std::sync::Arc::clone(&metrics_handle_clone);
+        let metrics_handle = state_for_reload.metrics_handle.clone();
         tokio::spawn(async move {
             // Abort previous server if running
             if let Some(handle) = metrics_handle.write().await.take() {

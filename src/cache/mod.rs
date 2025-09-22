@@ -8,7 +8,7 @@ pub mod storage;
 
 pub use etag::{ConditionalResult, ETagManager};
 pub use policy::{CacheDecision, PolicyEngine};
-pub use storage::{CacheStats, InMemoryCache};
+pub use storage::{CacheStats, CacheMetrics, InMemoryCache};
 
 // Re-export config types for convenience
 pub use crate::config::{CacheConfig, CachePolicy, CachePolicyPattern};
@@ -96,42 +96,6 @@ impl CacheEntry {
         } else {
             false
         }
-    }
-}
-
-/// Cache metrics
-#[derive(Debug, Clone, Default)]
-pub struct CacheMetrics {
-    /// Total number of cache hits
-    pub hits: u64,
-    /// Total number of cache misses
-    pub misses: u64,
-    /// Total number of cache stores
-    pub stores: u64,
-    /// Total number of cache evictions
-    pub evictions: u64,
-    /// Current cache size in bytes
-    pub current_size: u64,
-    /// Number of cached entries
-    pub entry_count: u64,
-    /// Number of expired entries cleaned up
-    pub expired_cleaned: u64,
-}
-
-impl CacheMetrics {
-    /// Calculate hit ratio as percentage
-    pub fn hit_ratio(&self) -> f64 {
-        let total = self.hits + self.misses;
-        if total > 0 {
-            (self.hits as f64 / total as f64) * 100.0
-        } else {
-            0.0
-        }
-    }
-
-    /// Get total requests (hits + misses)
-    pub fn total_requests(&self) -> u64 {
-        self.hits + self.misses
     }
 }
 

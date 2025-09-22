@@ -1,4 +1,4 @@
-use crate::cache::{CacheConfig, CacheEntry, CacheMetrics};
+use crate::cache::{CacheConfig, CacheEntry};
 use anyhow::Result;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -333,6 +333,42 @@ pub struct CacheStats {
     pub stores: u64,
     /// Total evictions
     pub evictions: u64,
+}
+
+/// Cache metrics for detailed monitoring
+#[derive(Debug, Clone, Default)]
+pub struct CacheMetrics {
+    /// Total number of cache hits
+    pub hits: u64,
+    /// Total number of cache misses
+    pub misses: u64,
+    /// Total number of cache stores
+    pub stores: u64,
+    /// Total number of cache evictions
+    pub evictions: u64,
+    /// Current cache size in bytes
+    pub current_size: u64,
+    /// Number of cached entries
+    pub entry_count: u64,
+    /// Number of expired entries cleaned up
+    pub expired_cleaned: u64,
+}
+
+impl CacheMetrics {
+    /// Calculate hit ratio as percentage
+    pub fn hit_ratio(&self) -> f64 {
+        let total = self.hits + self.misses;
+        if total > 0 {
+            (self.hits as f64 / total as f64) * 100.0
+        } else {
+            0.0
+        }
+    }
+
+    /// Get total requests (hits + misses)
+    pub fn total_requests(&self) -> u64 {
+        self.hits + self.misses
+    }
 }
 
 impl CacheStats {

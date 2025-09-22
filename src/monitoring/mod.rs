@@ -31,6 +31,7 @@ mod tests {
             metrics_port: 9090,
             health_check_port: 8081,
             histogram_buckets: None,
+            capacity: Default::default(),
             };
 
             let result = start_metrics_server(config).await;
@@ -49,6 +50,7 @@ mod tests {
             metrics_port: 0, // Use port 0 for auto-assignment to avoid conflicts
             health_check_port: 0,
             histogram_buckets: None,
+            capacity: Default::default(),
             };
 
             let result = start_metrics_server(config).await;
@@ -71,18 +73,21 @@ mod tests {
                 metrics_port: 9091,
                 health_check_port: 8082,
                 histogram_buckets: None,
+            capacity: Default::default(),
             },
             MonitoringConfig {
                 enabled: true,
                 metrics_port: 9092,
                 health_check_port: 8083,
                 histogram_buckets: None,
+            capacity: Default::default(),
             },
             MonitoringConfig {
                 enabled: false,
                 metrics_port: 9093,
                 health_check_port: 8084,
                 histogram_buckets: None,
+            capacity: Default::default(),
             },
         ];
 
@@ -111,6 +116,7 @@ mod tests {
                 metrics_port: 0, // Auto-assign to avoid conflicts
                 health_check_port: 0,
                 histogram_buckets: None,
+            capacity: Default::default(),
                 };
                 let result = start_metrics_server(config).await;
                 assert!(result.is_ok(), "Should start metrics server {}", i);
@@ -151,6 +157,7 @@ mod tests {
             metrics_port: 0,
             health_check_port: 0,
             histogram_buckets: None,
+            capacity: Default::default(),
         };
 
         let _ = tokio::time::timeout(Duration::from_secs(10), async {
