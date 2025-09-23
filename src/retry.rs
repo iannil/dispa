@@ -371,7 +371,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_retry_success_on_first_attempt() {
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
             let executor = RetryExecutor::with_defaults();
             let counter = Arc::new(AtomicUsize::new(0));
             let result = executor
@@ -393,7 +393,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_retry_success_after_failures() {
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
             let config = RetryConfig {
                 max_attempts: 3,
                 base_delay: Duration::from_millis(1), // Fast test
@@ -427,7 +427,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_retry_max_attempts_exceeded() {
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
             let config = RetryConfig {
                 max_attempts: 2,
                 base_delay: Duration::from_millis(1), // Fast test
@@ -456,7 +456,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_retry_abort_on_non_retryable_error() {
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
             let executor = RetryExecutor::with_defaults();
             let counter = Arc::new(AtomicUsize::new(0));
             let result = executor
@@ -477,7 +477,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_exponential_backoff() {
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        tokio::time::timeout(std::time::Duration::from_secs(3), async {
             let config = RetryConfig {
                 base_delay: Duration::from_millis(100),
                 backoff: BackoffStrategy::Exponential { multiplier: 2.0 },
@@ -498,7 +498,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_linear_backoff() {
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        tokio::time::timeout(std::time::Duration::from_secs(3), async {
             let config = RetryConfig {
                 base_delay: Duration::from_millis(100),
                 backoff: BackoffStrategy::Linear,
@@ -519,7 +519,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_fixed_backoff() {
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        tokio::time::timeout(std::time::Duration::from_secs(3), async {
             let config = RetryConfig {
                 base_delay: Duration::from_millis(100),
                 backoff: BackoffStrategy::Fixed,
@@ -540,7 +540,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_error_recovery_with_retry() {
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
             let counter = Arc::new(AtomicUsize::new(0));
             let result = ErrorRecovery::with_retry(|_ctx| {
                 let counter = Arc::clone(&counter);
@@ -564,7 +564,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_exponential_backoff_helper() {
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        tokio::time::timeout(std::time::Duration::from_secs(3), async {
             let config = RetryConfig {
                 max_attempts: 3,
                 base_delay: Duration::from_millis(100),
@@ -601,7 +601,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_retry_context() {
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
             let executor = RetryExecutor::with_defaults();
             let contexts = Arc::new(std::sync::Mutex::new(Vec::new()));
             let _ = executor

@@ -48,6 +48,7 @@ impl HealthChecker {
     }
 
     #[cfg(test)]
+    #[allow(dead_code)]
     pub async fn set_health_status_for_test(&self, map: HashMap<String, HealthStatus>) {
         let mut status_map = self.health_status.write().await;
         *status_map = map;
@@ -343,7 +344,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_health_checker_creation() {
-        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(Duration::from_secs(10), async {
             let config = create_test_health_config();
             let checker = HealthChecker::new(config.clone());
             assert_eq!(checker.config.enabled, config.enabled);
@@ -356,7 +357,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_healthy_target_check() {
-        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(Duration::from_secs(10), async {
             let mock_server = MockServer::start().await;
             Mock::given(method("GET"))
                 .and(path("/health"))
@@ -375,7 +376,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_unhealthy_target_check() {
-        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(Duration::from_secs(10), async {
             let mock_server = MockServer::start().await;
 
             Mock::given(method("GET"))
@@ -396,7 +397,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_health_endpoint_fallback() {
-        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(Duration::from_secs(10), async {
             let mock_server = MockServer::start().await;
 
             // /health returns 404, /healthz returns 200
@@ -425,7 +426,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_consecutive_failure_threshold() {
-        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(Duration::from_secs(10), async {
             let mock_server = MockServer::start().await;
 
             Mock::given(method("GET"))
@@ -462,7 +463,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_consecutive_success_threshold() {
-        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(Duration::from_secs(10), async {
             let mock_server = MockServer::start().await;
             let request_count = Arc::new(AtomicU16::new(0));
             let _count_clone = Arc::clone(&request_count);
@@ -523,7 +524,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_response_time_recording() {
-        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(Duration::from_secs(10), async {
             let mock_server = MockServer::start().await;
 
             Mock::given(method("GET"))
@@ -556,7 +557,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_error_message_recording() {
-        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(Duration::from_secs(10), async {
             let target = create_test_target("test", "http://127.0.0.1:1");
             let config = create_test_health_config();
             let checker = HealthChecker::new(config);
@@ -586,7 +587,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_custom_path_health_check() {
-        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(Duration::from_secs(10), async {
             let mock_server = MockServer::start().await;
 
             Mock::given(method("GET"))
@@ -610,7 +611,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_redirection_as_healthy() {
-        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(Duration::from_secs(10), async {
             let mock_server = MockServer::start().await;
 
             // Create a proper redirect: /health -> /healthz, and /healthz returns 200
@@ -643,7 +644,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_concurrent_health_checks() {
-        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(Duration::from_secs(10), async {
             let mock_server = MockServer::start().await;
 
             Mock::given(method("GET"))
@@ -680,7 +681,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_all_health_status() {
-        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(Duration::from_secs(10), async {
             let mock_server = MockServer::start().await;
 
             Mock::given(method("GET"))
@@ -718,7 +719,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_disabled_health_checks() {
-        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(Duration::from_secs(10), async {
             let config = HealthCheckConfig {
                 enabled: false,
                 interval: 1,

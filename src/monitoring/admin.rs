@@ -679,7 +679,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_admin_rbac_and_config_json_merge() {
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        tokio::time::timeout(std::time::Duration::from_secs(10), async {
         // Prepare temp config file
         let mut cfg = crate::config::Config {
             server: crate::config::ServerConfig {
@@ -740,7 +740,7 @@ mod tests {
         // Set admin/editor tokens and init
         std::env::set_var("DISPA_ADMIN_TOKEN", "adm");
         std::env::set_var("DISPA_EDITOR_TOKEN", "ed");
-        let _ = super::init_admin(super::AdminState{ config_path: temp.path().to_path_buf(), domain_config: domain, load_balancer: lb, routing_engine: routing, plugins, security });
+        super::init_admin(super::AdminState{ config_path: temp.path().to_path_buf(), domain_config: domain, load_balancer: lb, routing_engine: routing, plugins, security });
 
         // 1) GET /admin/status with admin token
         let req = Request::builder().method("GET").uri("/admin/status").header("x-admin-token","adm").body(Body::empty()).unwrap();

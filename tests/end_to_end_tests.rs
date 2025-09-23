@@ -97,7 +97,7 @@ fn create_end_to_end_test_config(target_urls: Vec<String>) -> Config {
 
 #[tokio::test]
 async fn test_end_to_end_proxy_with_load_balancing() {
-    let _ = tokio::time::timeout(std::time::Duration::from_secs(20), async {
+    tokio::time::timeout(std::time::Duration::from_secs(20), async {
         // Setup mock backend servers
         let backend1 = MockServer::start().await;
         let backend2 = MockServer::start().await;
@@ -151,7 +151,7 @@ async fn test_end_to_end_proxy_with_load_balancing() {
 
 #[tokio::test]
 async fn test_domain_matching_integration() {
-    let _ = tokio::time::timeout(std::time::Duration::from_secs(20), async {
+    tokio::time::timeout(std::time::Duration::from_secs(20), async {
         let backend = MockServer::start().await;
 
         Mock::given(method("GET"))
@@ -185,7 +185,7 @@ async fn test_domain_matching_integration() {
 
 #[tokio::test]
 async fn test_health_checking_integration() {
-    let _ = tokio::time::timeout(std::time::Duration::from_secs(20), async {
+    tokio::time::timeout(std::time::Duration::from_secs(20), async {
         let healthy_backend = MockServer::start().await;
         let unhealthy_backend = MockServer::start().await;
 
@@ -234,7 +234,7 @@ async fn test_health_checking_integration() {
 
 #[tokio::test]
 async fn test_different_load_balancing_algorithms() {
-    let _ = tokio::time::timeout(std::time::Duration::from_secs(20), async {
+    tokio::time::timeout(std::time::Duration::from_secs(20), async {
         let backend1 = MockServer::start().await;
         let backend2 = MockServer::start().await;
         let backend3 = MockServer::start().await;
@@ -311,7 +311,7 @@ async fn test_different_load_balancing_algorithms() {
 
 #[tokio::test]
 async fn test_logging_integration() {
-    let _ = tokio::time::timeout(std::time::Duration::from_secs(20), async {
+    tokio::time::timeout(std::time::Duration::from_secs(20), async {
         let logging_configs = vec![
             // Disabled logging
             LoggingConfig {
@@ -381,7 +381,7 @@ async fn test_logging_integration() {
 
 #[tokio::test]
 async fn test_monitoring_integration() {
-    let _ = tokio::time::timeout(std::time::Duration::from_secs(20), async {
+    tokio::time::timeout(std::time::Duration::from_secs(20), async {
         let monitoring_configs = vec![
             MonitoringConfig {
                 enabled: false,
@@ -450,7 +450,7 @@ async fn test_monitoring_integration() {
 
 #[tokio::test]
 async fn test_configuration_validation_integration() {
-    let _ = tokio::time::timeout(std::time::Duration::from_secs(20), async {
+    tokio::time::timeout(std::time::Duration::from_secs(20), async {
         let test_cases = vec![
             // Valid minimal configuration
             (
@@ -512,7 +512,7 @@ async fn test_configuration_validation_integration() {
 
 #[tokio::test]
 async fn test_concurrent_component_creation() {
-    let _ = tokio::time::timeout(std::time::Duration::from_secs(20), async {
+    tokio::time::timeout(std::time::Duration::from_secs(20), async {
         let backend = MockServer::start().await;
         Mock::given(method("GET"))
             .respond_with(ResponseTemplate::new(200).set_body_string("Concurrent Test"))
@@ -566,7 +566,7 @@ async fn test_concurrent_component_creation() {
 
 #[tokio::test]
 async fn test_component_interaction_patterns() {
-    let _ = tokio::time::timeout(std::time::Duration::from_secs(20), async {
+    tokio::time::timeout(std::time::Duration::from_secs(20), async {
         let backend = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/health"))

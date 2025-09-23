@@ -845,7 +845,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ddos_header_limits() {
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
             let cfg = SecurityConfig {
                 enabled: true,
                 access_control: None,
@@ -893,7 +893,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_jwt_hs256_validation() {
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
             // Build minimal HS256 JWT: header {alg:HS256,typ:JWT}, payload with exp far future
             let header = b"{\"alg\":\"HS256\",\"typ\":\"JWT\"}";
             let payload = format!(
@@ -946,7 +946,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_jwt_claims_issuer_audience_leeway() {
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
             // Build HS256 token with iat in near future but within leeway
             let header = b"{\"alg\":\"HS256\",\"typ\":\"JWT\"}";
             let now = std::time::SystemTime::now()

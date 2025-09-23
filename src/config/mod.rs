@@ -55,6 +55,7 @@ pub use manager::ConfigManager;
 pub use monitoring::MonitoringConfig;
 pub use plugins::{PluginErrorStrategy, PluginStage, PluginType, PluginsConfig};
 pub use server::{DomainConfig, ServerConfig};
+#[allow(unused_imports)]
 pub use targets::{
     HealthCheckConfig, LoadBalancingConfig, LoadBalancingType, Target, TargetConfig,
 };

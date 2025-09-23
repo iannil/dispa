@@ -166,7 +166,7 @@ fn create_minimal_test_config() -> Config {
 
 #[tokio::test]
 async fn test_proxy_server_creation_integration() {
-    let _ = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+    tokio::time::timeout(std::time::Duration::from_secs(15), async {
         let config = create_integration_test_config();
         let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
         let traffic_logger = TrafficLogger::new(config.logging.clone());
@@ -183,17 +183,17 @@ async fn test_proxy_server_creation_integration() {
 
 #[tokio::test]
 async fn test_config_validation_integration() {
-    let _ = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+    tokio::time::timeout(std::time::Duration::from_secs(15), async {
         let mut config = create_integration_test_config();
 
         // 如果验证失败，打印详细错误信息
         match config.validate() {
             Ok(_) => {
-                assert!(true, "Validation should pass");
+                // Validation succeeded as expected
             }
             Err(e) => {
                 eprintln!("Validation error: {}", e);
-                assert!(false, "Validation failed: {}", e);
+                panic!("Validation failed: {}", e);
             }
         }
         config.domains.intercept_domains.clear();
@@ -230,7 +230,7 @@ async fn test_config_validation_integration() {
 
 #[tokio::test]
 async fn test_load_balancing_types_integration() {
-    let _ = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+    tokio::time::timeout(std::time::Duration::from_secs(15), async {
         let traffic_logger = TrafficLogger::new(LoggingConfig {
             enabled: false,
             log_type: LoggingType::File,
@@ -257,7 +257,7 @@ async fn test_load_balancing_types_integration() {
 
 #[tokio::test]
 async fn test_domain_configuration_integration() {
-    let _ = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+    tokio::time::timeout(std::time::Duration::from_secs(15), async {
         let traffic_logger = TrafficLogger::new(LoggingConfig {
             enabled: false,
             log_type: LoggingType::File,
@@ -317,7 +317,7 @@ async fn test_domain_configuration_integration() {
 
 #[tokio::test]
 async fn test_target_configuration_integration() {
-    let _ = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+    tokio::time::timeout(std::time::Duration::from_secs(15), async {
         let traffic_logger = TrafficLogger::new(LoggingConfig {
             enabled: false,
             log_type: LoggingType::File,
@@ -408,7 +408,7 @@ async fn test_target_configuration_integration() {
 
 #[tokio::test]
 async fn test_monitoring_configuration_integration() {
-    let _ = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+    tokio::time::timeout(std::time::Duration::from_secs(15), async {
         let traffic_logger = TrafficLogger::new(LoggingConfig {
             enabled: false,
             log_type: LoggingType::File,
@@ -432,7 +432,7 @@ async fn test_monitoring_configuration_integration() {
 
 #[tokio::test]
 async fn test_logging_configuration_integration() {
-    let _ = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+    tokio::time::timeout(std::time::Duration::from_secs(15), async {
         let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
         let logging_configs = vec![
             // Disabled logging
@@ -487,7 +487,7 @@ async fn test_logging_configuration_integration() {
 
 #[tokio::test]
 async fn test_health_check_configuration_integration() {
-    let _ = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+    tokio::time::timeout(std::time::Duration::from_secs(15), async {
         let traffic_logger = TrafficLogger::new(LoggingConfig {
             enabled: false,
             log_type: LoggingType::File,
@@ -551,7 +551,7 @@ async fn test_health_check_configuration_integration() {
 
 #[tokio::test]
 async fn test_complete_configuration_integration() {
-    let _ = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+    tokio::time::timeout(std::time::Duration::from_secs(15), async {
         let config = Config {
             server: ServerConfig {
                 bind: "127.0.0.1:0".parse().unwrap(),
@@ -669,7 +669,7 @@ async fn test_complete_configuration_integration() {
 
 #[tokio::test]
 async fn test_configuration_edge_cases_integration() {
-    let _ = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+    tokio::time::timeout(std::time::Duration::from_secs(15), async {
         let traffic_logger = TrafficLogger::new(LoggingConfig {
             enabled: false,
             log_type: LoggingType::File,

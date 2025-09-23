@@ -30,7 +30,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_start_metrics_server_disabled() {
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        tokio::time::timeout(std::time::Duration::from_secs(10), async {
             let config = MonitoringConfig {
                 enabled: false,
                 bind: "127.0.0.1:0".parse().unwrap(),
@@ -48,7 +48,7 @@ mod tests {
             assert!(result.is_ok(), "Should start metrics server when disabled");
             let handle = result.unwrap();
             sleep(Duration::from_millis(10)).await;
-            let _ = handle.abort();
+            handle.abort();
         })
         .await
         .expect("test_start_metrics_server_disabled timed out");
@@ -56,7 +56,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_start_metrics_server_enabled() {
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        tokio::time::timeout(std::time::Duration::from_secs(10), async {
             let config = MonitoringConfig {
                 enabled: true,
                 bind: "127.0.0.1:0".parse().unwrap(),
@@ -130,7 +130,7 @@ mod tests {
 
         let mut handles = Vec::new();
 
-        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(Duration::from_secs(10), async {
             for config in configs {
                 let result = start_metrics_server(config).await;
                 assert!(
@@ -153,7 +153,7 @@ mod tests {
         // Test starting multiple metrics servers concurrently
         let mut handles = Vec::new();
 
-        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(Duration::from_secs(10), async {
             for i in 0..5 {
                 let config = MonitoringConfig {
                     enabled: true,
@@ -214,7 +214,7 @@ mod tests {
             health_check_port: 0,
         };
 
-        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(Duration::from_secs(10), async {
             let handle = start_metrics_server(config).await.unwrap();
             assert!(!handle.is_finished());
             handle.abort();

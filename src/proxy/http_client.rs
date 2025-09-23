@@ -302,7 +302,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_forward_with_limit_content_length_exceed() {
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
             // Body of 20 bytes, limit = 10 -> pre-check rejects without network
             let body = Body::from(vec![1u8; 20]);
             let req = Request::builder()

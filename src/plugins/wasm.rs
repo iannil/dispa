@@ -81,7 +81,9 @@ impl WasmPlugin {
     fn call_guest(&self, _stage: &str, _input: &str) -> Result<Option<String>> {
         // 注意：这是一个 WASM 插件的基本实现示例
         // 实际的生产环境可能需要更复杂的绑定和安全检查
-        Err(anyhow::anyhow!("WASM plugin functionality is currently disabled in this build"))
+        Err(anyhow::anyhow!(
+            "WASM plugin functionality is currently disabled in this build"
+        ))
     }
 
     async fn execute_wasm(&self, stage: &str, input: &str) -> Result<Option<String>> {

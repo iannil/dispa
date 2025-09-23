@@ -16,14 +16,15 @@
 //! ## 使用示例
 //!
 //! ```rust,no_run
-//! use dispa::{config::Config, proxy::ProxyServer};
+//! use dispa::{config::Config, proxy::ProxyServer, logger::TrafficLogger};
 //! use std::net::SocketAddr;
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!     let config = Config::from_file_with_env("config.toml").await?;
 //!     let bind_addr: SocketAddr = "0.0.0.0:8080".parse()?;
-//!     let server = ProxyServer::new(config, bind_addr);
+//!     let traffic_logger = TrafficLogger::new(config.logging.clone());
+//!     let server = ProxyServer::new(config, bind_addr, traffic_logger);
 //!     server.run().await?;
 //!     Ok(())
 //! }

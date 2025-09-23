@@ -94,7 +94,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_empty_plugin_engine() {
-        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(Duration::from_secs(10), async {
             let engine = empty_plugins_engine();
             assert!(engine.apply_before_domain_match());
 
@@ -113,7 +113,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_plugin_engine_with_header_injector() {
-        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(Duration::from_secs(10), async {
             let plugin_config = PluginConfig {
                 name: "test_header".to_string(),
                 plugin_type: PluginType::HeaderInjector,
@@ -151,7 +151,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_plugin_engine_creation() {
-        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(Duration::from_secs(10), async {
             let config = PluginsConfig {
                 enabled: true,
                 plugins: vec![],
@@ -167,7 +167,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_plugin_names() {
-        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(Duration::from_secs(10), async {
             let plugin_config1 = PluginConfig {
                 name: "header1".to_string(),
                 plugin_type: PluginType::HeaderInjector,
@@ -205,7 +205,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_plugin_both_stage() {
-        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(Duration::from_secs(10), async {
             let plugin_config = PluginConfig {
                 name: "both_stage".to_string(),
                 plugin_type: PluginType::HeaderInjector,
@@ -237,7 +237,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_disabled_plugin_ignored() {
-        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(Duration::from_secs(10), async {
             let plugin_config = PluginConfig {
                 name: "disabled".to_string(),
                 plugin_type: PluginType::HeaderInjector,
@@ -262,7 +262,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_plugins_disabled_globally() {
-        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(Duration::from_secs(10), async {
             let plugin_config = PluginConfig {
                 name: "enabled".to_string(),
                 plugin_type: PluginType::HeaderInjector,

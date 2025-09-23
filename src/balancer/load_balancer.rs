@@ -427,6 +427,7 @@ impl LoadBalancer {
     }
 
     #[cfg(test)]
+    #[allow(dead_code)]
     pub fn health_checker(&self) -> &super::health_check::HealthChecker {
         &self.health_checker
     }
@@ -830,7 +831,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_concurrent_access() {
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        tokio::time::timeout(std::time::Duration::from_secs(10), async {
             let targets = vec![
                 create_test_target("server1", None),
                 create_test_target("server2", None),
@@ -1109,7 +1110,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_concurrent_mixed_operations() {
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+        tokio::time::timeout(std::time::Duration::from_secs(15), async {
             let targets = vec![
                 create_test_target("server1", Some(2.0)),
                 create_test_target("server2", Some(3.0)),

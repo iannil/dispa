@@ -25,6 +25,7 @@ pub struct ProxyHandler {
 
 impl ProxyHandler {
     #[cfg(test)]
+    #[allow(dead_code)]
     pub fn new(
         domain_config: std::sync::Arc<StdRwLock<DomainConfig>>,
         load_balancer: std::sync::Arc<tokio::sync::RwLock<LoadBalancer>>,

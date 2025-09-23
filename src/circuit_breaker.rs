@@ -346,7 +346,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_circuit_breaker_closed_state() {
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
             let cb = CircuitBreaker::with_defaults("test".to_string());
             assert_eq!(cb.state().await, CircuitBreakerState::Closed);
             assert!(cb.can_execute().await);
@@ -357,7 +357,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_circuit_breaker_success() {
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
             let cb = CircuitBreaker::with_defaults("test".to_string());
             let result = cb.call(|| async { Ok::<i32, DispaError>(42) }).await;
             assert!(result.is_ok());
@@ -372,7 +372,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_circuit_breaker_failure() {
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        tokio::time::timeout(std::time::Duration::from_secs(10), async {
             let config = CircuitBreakerConfig {
                 failure_threshold: 2,
                 min_requests: 2,
@@ -404,7 +404,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_circuit_breaker_half_open_transition() {
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        tokio::time::timeout(std::time::Duration::from_secs(10), async {
             let config = CircuitBreakerConfig {
                 failure_threshold: 1,
                 min_requests: 1,
@@ -433,7 +433,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_circuit_breaker_recovery() {
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        tokio::time::timeout(std::time::Duration::from_secs(10), async {
             let config = CircuitBreakerConfig {
                 failure_threshold: 1,
                 success_threshold: 2,
@@ -469,7 +469,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_circuit_breaker_half_open_failure() {
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        tokio::time::timeout(std::time::Duration::from_secs(10), async {
             let config = CircuitBreakerConfig {
                 failure_threshold: 1,
                 min_requests: 1,
@@ -502,7 +502,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_circuit_breaker_force_operations() {
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
             let cb = CircuitBreaker::with_defaults("test".to_string());
             cb.force_open().await;
             assert_eq!(cb.state().await, CircuitBreakerState::Open);
@@ -518,7 +518,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_circuit_breaker_stats() {
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
             let cb = CircuitBreaker::with_defaults("test".to_string());
             let stats = cb.stats().await;
             assert_eq!(stats.name, "test");

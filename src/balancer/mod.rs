@@ -24,13 +24,15 @@
 //! use dispa::balancer::LoadBalancer;
 //! use dispa::config::TargetConfig;
 //!
+//! # async fn example() {
 //! let target_config = TargetConfig::default();
 //! let load_balancer = LoadBalancer::new(target_config);
 //!
 //! // 选择下一个健康的目标服务器
-//! if let Some(target) = load_balancer.next_target().await {
+//! if let Some(target) = load_balancer.get_target().await {
 //!     println!("选择的目标: {}", target.url);
 //! }
+//! # }
 //! ```
 
 pub mod health_check; // 健康检查模块，提供并发健康监控

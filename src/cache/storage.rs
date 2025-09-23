@@ -421,7 +421,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_cache_creation() {
-        let _ = tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::time::timeout(Duration::from_secs(5), async {
             let config = create_test_config();
             let cache = InMemoryCache::new(config);
             let stats = cache.stats().await;
@@ -435,7 +435,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_cache_put_and_get() {
-        let _ = tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::time::timeout(Duration::from_secs(5), async {
             let config = create_test_config();
             let cache = InMemoryCache::new(config);
 
@@ -463,7 +463,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_cache_miss() {
-        let _ = tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::time::timeout(Duration::from_secs(5), async {
             let config = create_test_config();
             let cache = InMemoryCache::new(config);
 
@@ -479,7 +479,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_cache_expiration() {
-        let _ = tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::time::timeout(Duration::from_secs(5), async {
             let config = create_test_config();
             let cache = InMemoryCache::new(config);
 
@@ -505,7 +505,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_cache_remove() {
-        let _ = tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::time::timeout(Duration::from_secs(5), async {
             let config = create_test_config();
             let cache = InMemoryCache::new(config);
 
@@ -532,7 +532,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_cache_clear() {
-        let _ = tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::time::timeout(Duration::from_secs(5), async {
             let config = create_test_config();
             let cache = InMemoryCache::new(config);
 
@@ -558,7 +558,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_cache_size_limit_eviction() {
-        let _ = tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::time::timeout(Duration::from_secs(5), async {
             let config = create_test_config(); // 1KB limit
             let cache = InMemoryCache::new(config);
 
@@ -582,7 +582,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_cache_contains_key() {
-        let _ = tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::time::timeout(Duration::from_secs(5), async {
             let config = create_test_config();
             let cache = InMemoryCache::new(config);
 
@@ -603,7 +603,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_cache_disabled() {
-        let _ = tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::time::timeout(Duration::from_secs(5), async {
             let mut config = create_test_config();
             config.enabled = false;
             let cache = InMemoryCache::new(config);
@@ -628,7 +628,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_cache_metrics() {
-        let _ = tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::time::timeout(Duration::from_secs(5), async {
             let config = create_test_config();
             let cache = InMemoryCache::new(config);
 
@@ -658,7 +658,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_cache_stats() {
-        let _ = tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::time::timeout(Duration::from_secs(5), async {
             let config = create_test_config();
             let cache = InMemoryCache::new(config);
 

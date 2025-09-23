@@ -741,7 +741,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_proxy_server_creation_performance() {
-        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(Duration::from_secs(10), async {
             let config = create_test_config();
             let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
             let traffic_logger = create_test_traffic_logger();
@@ -767,7 +767,7 @@ mod tests {
         let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
         let traffic_logger = create_test_traffic_logger();
 
-        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(Duration::from_secs(10), async {
             let server = ProxyServer::new(config, bind_addr, traffic_logger);
             let server_handle = tokio::spawn(async move { server.run().await });
             tokio::time::sleep(Duration::from_millis(50)).await;
@@ -801,7 +801,7 @@ mod tests {
         for (i, config) in configs.into_iter().enumerate() {
             let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
             let traffic_logger = create_test_traffic_logger();
-            let _ = tokio::time::timeout(Duration::from_secs(10), async move {
+            tokio::time::timeout(Duration::from_secs(10), async move {
                 let server = ProxyServer::new(config, bind_addr, traffic_logger);
                 let server_handle = tokio::spawn(async move { server.run().await });
                 tokio::time::sleep(Duration::from_millis(30)).await;
@@ -823,7 +823,7 @@ mod tests {
 
         // Use port 0 (auto-assign) to avoid permission issues, but test cancellation behavior
         let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(Duration::from_secs(10), async {
             let server = ProxyServer::new(config, bind_addr, traffic_logger);
             let server_handle = tokio::spawn(async move { server.run().await });
             tokio::time::sleep(Duration::from_millis(10)).await;
@@ -870,7 +870,7 @@ mod tests {
         let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
         let traffic_logger = create_test_traffic_logger();
 
-        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(Duration::from_secs(10), async {
             let server = ProxyServer::new(config, bind_addr, traffic_logger);
             let server_handle = tokio::spawn(async move { server.run().await });
             tokio::time::sleep(Duration::from_millis(50)).await;
@@ -886,7 +886,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_proxy_server_with_tls_disabled() {
-        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(Duration::from_secs(10), async {
             let config = create_test_config();
             // TLS is disabled by default in test config
 
@@ -956,7 +956,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_proxy_server_health_check_integration() {
-        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(Duration::from_secs(10), async {
             let mut config = create_test_config();
             config.targets.health_check.enabled = true;
             config.targets.health_check.interval = 1; // Very short interval for testing
@@ -981,7 +981,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_proxy_server_traffic_logging_integration() {
-        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(Duration::from_secs(10), async {
             let mut config = create_test_config();
             config.logging.enabled = true;
             config.logging.log_type = crate::config::LoggingType::File;
@@ -1006,7 +1006,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_proxy_server_with_caching_enabled() {
-        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(Duration::from_secs(10), async {
             let config = create_test_config();
             // 暂时跳过缓存配置测试，等待配置结构修复
             // config.caching = Some(crate::config::CacheConfig { ... });
@@ -1031,7 +1031,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_proxy_server_monitoring_integration() {
-        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(Duration::from_secs(10), async {
             let mut config = create_test_config();
             config.monitoring.enabled = true;
             config.monitoring.metrics_port = 0; // Use ephemeral port for testing
@@ -1067,7 +1067,7 @@ mod tests {
         ];
 
         for algorithm in algorithms {
-            let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            tokio::time::timeout(Duration::from_secs(10), async {
                 let mut config = create_test_config();
                 config.targets.load_balancing.lb_type = algorithm.clone();
 
@@ -1087,16 +1087,18 @@ mod tests {
                 let _ = server_handle.await;
             })
             .await
-            .expect(&format!(
-                "test_proxy_server_load_balancing_algorithms timed out for {:?}",
-                algorithm
-            ));
+            .unwrap_or_else(|_| {
+                panic!(
+                    "test_proxy_server_load_balancing_algorithms timed out for {:?}",
+                    algorithm
+                )
+            });
         }
     }
 
     #[tokio::test]
     async fn test_proxy_server_with_security_enabled() {
-        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(Duration::from_secs(10), async {
             let config = create_test_config();
             // 暂时跳过安全配置测试，等待配置结构修复
             // config.security = Some(...);
