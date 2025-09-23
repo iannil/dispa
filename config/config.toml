@@ -1,8 +1,6 @@
 [server]
-bind_address = "0.0.0.0:8080"
+bind = "0.0.0.0:8081"
 workers = 4
-keep_alive_timeout = 60
-request_timeout = 30
 
 [domains]
 intercept_domains = ["example.com", "api.example.com", "*.test.com"]
@@ -11,36 +9,41 @@ wildcard_support = true
 
 [[targets.targets]]
 name = "backend1"
+address = "http://192.168.1.100:3000"
 url = "http://192.168.1.100:3000"
 weight = 3
 timeout = 30
 
 [[targets.targets]]
 name = "backend2"
+address = "http://192.168.1.101:3000"
 url = "http://192.168.1.101:3000"
 weight = 2
 timeout = 30
 
 [[targets.targets]]
 name = "backend3"
+address = "http://192.168.1.102:3000"
 url = "http://192.168.1.102:3000"
 weight = 1
 timeout = 30
 
 [targets.load_balancing]
-type = "weighted"
+algorithm = "Weighted"
+lb_type = "Weighted"
 sticky_sessions = false
 
 [targets.health_check]
 enabled = true
 interval = 30
 timeout = 10
+threshold = 3
 healthy_threshold = 2
 unhealthy_threshold = 3
 
 [logging]
 enabled = true
-type = "file"  # file | database | both
+log_type = "File"
 retention_days = 30
 
 # 数据库日志配置 (当type为database或both时使用)
@@ -56,16 +59,9 @@ rotation = true
 
 [monitoring]
 enabled = true
-metrics_port = 9090
-health_check_port = 8081
-
-# 容量监控配置
-[monitoring.capacity]
-max_connections_per_target = 1000  # 每个目标的最大连接数
-global_max_connections = 1000      # 全局最大连接数
-max_duration_samples = 10000       # 延迟百分位数计算的最大样本数
-
-# 内存监控配置
-[monitoring.capacity.memory]
-memory_per_connection = 65536      # 每个连接的估计内存使用(字节)
-warning_threshold = 1073741824     # 内存使用警告阈值(1GB)
+bind = "127.0.0.1:8082"
+health_endpoint = "/health"
+metrics_endpoint = "/metrics"
+prometheus_enabled = true
+metrics_port = 9091
+health_check_port = 8082
