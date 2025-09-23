@@ -7,6 +7,7 @@ use tracing::{debug, warn};
 use super::health_check::{HealthChecker, HealthStatus};
 use crate::config::{LoadBalancingType, Target, TargetConfig};
 
+/// Connection statistics for a target
 #[derive(Debug, Clone)]
 pub struct ConnectionStats {
     pub active_connections: u32,
@@ -28,6 +29,13 @@ impl Default for ConnectionStats {
     }
 }
 
+/// Load balancer for distributing requests across multiple targets
+///
+/// Supports multiple load balancing algorithms:
+/// - Round Robin: Distributes requests evenly across all healthy targets
+/// - Weighted Round Robin: Distributes based on configured weights
+/// - Least Connections: Routes to the target with fewest active connections
+/// - Random: Randomly selects a healthy target
 #[derive(Clone)]
 pub struct LoadBalancer {
     targets: Vec<Target>,
@@ -46,6 +54,7 @@ struct WeightedRoundRobinState {
 }
 
 impl LoadBalancer {
+    /// Create a new load balancer with the given configuration
     pub fn new(config: TargetConfig) -> Self {
         let health_checker = HealthChecker::new(config.health_check.clone());
 

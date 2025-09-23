@@ -26,6 +26,16 @@ pub struct DatabaseConfig {
     pub connection_timeout: Option<u64>,
 }
 
+impl Default for DatabaseConfig {
+    fn default() -> Self {
+        Self {
+            url: "sqlite://logs/traffic.db".to_string(),
+            max_connections: Some(20), // Increased from 5 to 20 for better throughput
+            connection_timeout: Some(30), // 30 seconds timeout
+        }
+    }
+}
+
 /// File logging configuration
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct FileConfig {

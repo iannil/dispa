@@ -17,6 +17,17 @@ use crate::routing::RoutingEngine;
 use crate::security::{SecurityManager, SharedSecurity};
 use crate::tls::TlsManager;
 
+/// High-performance HTTP proxy server
+///
+/// The ProxyServer handles incoming HTTP requests and forwards them to backend targets
+/// based on the configured load balancing algorithm. It supports:
+/// - Multiple load balancing strategies
+/// - Health checking of backend targets
+/// - Request/response logging
+/// - Plugin system for request/response modification
+/// - Security features (authentication, rate limiting)
+/// - TLS termination
+/// - Caching capabilities
 pub struct ProxyServer {
     pub bind_addr: SocketAddr,
     #[allow(dead_code)]

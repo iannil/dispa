@@ -8,9 +8,15 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
-/// Enhanced authentication and authorization module
-/// Provides multi-factor authentication, session management, and role-based access control
-
+/// Enhanced security configuration
+///
+/// Provides comprehensive security features including:
+/// - Multi-factor authentication (MFA)
+/// - Session management with configurable timeouts
+/// - Role-based access control (RBAC)
+/// - Password policies and account lockout
+/// - IP whitelisting and geo-blocking
+/// - Rate limiting and DDoS protection
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct EnhancedSecurityConfig {
     pub enabled: bool,

@@ -7,7 +7,15 @@ use tokio::sync::RwLock;
 use tokio::time::interval;
 use tracing::{debug, info, warn};
 
-/// In-memory cache storage with TTL support
+/// High-performance in-memory cache with TTL and size-based eviction
+///
+/// Features:
+/// - TTL (Time-To-Live) based expiration
+/// - LRU eviction when size limits are reached
+/// - Thread-safe concurrent access
+/// - Configurable maximum size limits
+/// - Real-time metrics collection
+/// - Background cleanup of expired entries
 #[derive(Clone)]
 pub struct InMemoryCache {
     /// Cache storage
