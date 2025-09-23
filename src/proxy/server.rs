@@ -1,6 +1,6 @@
 use anyhow::Result;
-use hyper::service::{make_service_fn, service_fn};
 use hyper::server::conn::AddrStream;
+use hyper::service::{make_service_fn, service_fn};
 use hyper::Server;
 use std::convert::Infallible;
 use std::net::SocketAddr;
@@ -12,10 +12,10 @@ use crate::balancer::LoadBalancer;
 use crate::config::Config;
 use crate::error::DispaResult;
 use crate::logger::TrafficLogger;
-use crate::routing::RoutingEngine;
-use crate::tls::TlsManager;
-use crate::security::{SecurityManager, SharedSecurity};
 use crate::plugins::{PluginEngine, SharedPluginEngine};
+use crate::routing::RoutingEngine;
+use crate::security::{SecurityManager, SharedSecurity};
+use crate::tls::TlsManager;
 
 pub struct ProxyServer {
     pub bind_addr: SocketAddr,
@@ -78,8 +78,12 @@ impl ProxyServer {
 
         // Initialize security manager if configured
         let security = if let Some(sec_cfg) = &config.security {
-            std::sync::Arc::new(tokio::sync::RwLock::new(Some(SecurityManager::new(sec_cfg.clone()))))
-        } else { std::sync::Arc::new(tokio::sync::RwLock::new(None)) };
+            std::sync::Arc::new(tokio::sync::RwLock::new(Some(SecurityManager::new(
+                sec_cfg.clone(),
+            ))))
+        } else {
+            std::sync::Arc::new(tokio::sync::RwLock::new(None))
+        };
 
         let domain_config = std::sync::Arc::new(std::sync::RwLock::new(config.domains.clone()));
 
@@ -263,19 +267,19 @@ impl ProxyServer {
 mod tests {
     use super::*;
     use crate::config::{
-        Config, DomainConfig, HealthCheckConfig, LoadBalancingConfig, LoadBalancingType,
-        LoggingConfig, LoggingType, MonitoringConfig, ServerConfig, Target, TargetConfig,
-        HttpClientConfig,
+        Config, DomainConfig, HealthCheckConfig, HttpClientConfig, LoadBalancingConfig,
+        LoadBalancingType, LoggingConfig, LoggingType, MonitoringConfig, ServerConfig, Target,
+        TargetConfig,
     };
     use std::time::Duration;
 
     fn create_test_config() -> Config {
         Config {
             server: ServerConfig {
-                bind_address: "127.0.0.1:0".parse().unwrap(), // Use port 0 for auto-assignment
+                bind: "127.0.0.1:0".parse().unwrap(), // Use port 0 for auto-assignment
                 workers: Some(2),
-                keep_alive_timeout: Some(30),
-                request_timeout: Some(10),
+                max_connections: Some(1000),
+                connection_timeout: Some(30),
             },
             domains: DomainConfig {
                 intercept_domains: vec!["test.example.com".to_string()],
@@ -287,19 +291,22 @@ mod tests {
                     Target {
                         name: "test-backend-1".to_string(),
                         url: "http://127.0.0.1:3001".to_string(),
-                        weight: Some(1),
+                        address: "127.0.0.1:3001".to_string(),
+                        weight: Some(1.0),
                         timeout: Some(30),
                     },
                     Target {
                         name: "test-backend-2".to_string(),
                         url: "http://127.0.0.1:3002".to_string(),
-                        weight: Some(2),
+                        address: "127.0.0.1:3002".to_string(),
+                        weight: Some(2.0),
                         timeout: Some(30),
                     },
                 ],
                 load_balancing: LoadBalancingConfig {
+                    algorithm: LoadBalancingType::Weighted,
                     lb_type: LoadBalancingType::Weighted,
-                    sticky_sessions: false,
+                    sticky_sessions: Some(false),
                 },
                 health_check: HealthCheckConfig {
                     enabled: false, // Disable for tests to avoid network calls
@@ -307,6 +314,7 @@ mod tests {
                     timeout: 5,
                     healthy_threshold: 2,
                     unhealthy_threshold: 3,
+                    threshold: 2,
                 },
             },
             logging: LoggingConfig {
@@ -316,18 +324,19 @@ mod tests {
                 file: None,
                 retention_days: None,
             },
-            monitoring: MonitoringConfig {
-                enabled: false, // Disable for tests
-                metrics_port: 9090,
-                health_check_port: 8081,
-                histogram_buckets: None,
-                capacity: Default::default(),
-            },
+            monitoring: MonitoringConfig::default(),
             tls: None,     // TLS disabled for tests
             routing: None, // Routing disabled for tests
             cache: None,   // Cache disabled for tests
             // Use small timeouts for tests to avoid long OS-level connect timeouts
-            http_client: Some(HttpClientConfig{ pool_max_idle_per_host: Some(8), pool_idle_timeout_secs: Some(30), connect_timeout_secs: Some(2) }),
+            http_client: Some(HttpClientConfig {
+                pool_max_idle_per_host: Some(8),
+                pool_idle_timeout: Some(30),
+                pool_idle_timeout_secs: Some(30),
+                connect_timeout: Some(2),
+                connect_timeout_secs: Some(2),
+                request_timeout: Some(10),
+            }),
             plugins: None,
             security: None,
         }
@@ -387,10 +396,10 @@ mod tests {
     async fn test_proxy_server_config_preservation() {
         let mut config = create_test_config();
         config.server.workers = Some(8);
-        config.server.keep_alive_timeout = Some(120);
-        config.server.request_timeout = Some(60);
+        config.server.max_connections = Some(1200);
+        config.server.connection_timeout = Some(60);
         config.domains.wildcard_support = false;
-        config.targets.load_balancing.sticky_sessions = true;
+        config.targets.load_balancing.sticky_sessions = Some(true);
 
         let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
         let traffic_logger = create_test_traffic_logger();
@@ -399,10 +408,13 @@ mod tests {
 
         // Verify that all config values are preserved
         assert_eq!(server.config.server.workers, Some(8));
-        assert_eq!(server.config.server.keep_alive_timeout, Some(120));
-        assert_eq!(server.config.server.request_timeout, Some(60));
+        assert_eq!(server.config.server.max_connections, Some(1200));
+        assert_eq!(server.config.server.connection_timeout, Some(60));
         assert!(!server.config.domains.wildcard_support);
-        assert!(server.config.targets.load_balancing.sticky_sessions);
+        assert_eq!(
+            server.config.targets.load_balancing.sticky_sessions,
+            Some(true)
+        );
     }
 
     #[tokio::test]
@@ -411,7 +423,8 @@ mod tests {
         config.targets.targets = vec![Target {
             name: "single-backend".to_string(),
             url: "http://127.0.0.1:4000".to_string(),
-            weight: Some(5),
+            address: "127.0.0.1:4000".to_string(),
+            weight: Some(5.0),
             timeout: Some(15),
         }];
 
@@ -426,7 +439,7 @@ mod tests {
             server.config.targets.targets[0].url,
             "http://127.0.0.1:4000"
         );
-        assert_eq!(server.config.targets.targets[0].weight, Some(5));
+        assert_eq!(server.config.targets.targets[0].weight, Some(5.0));
     }
 
     #[tokio::test]
@@ -452,17 +465,20 @@ mod tests {
             .config
             .domains
             .intercept_domains
-            .contains(&"api.example.com".to_string()));
+            .iter()
+            .any(|s| s == "api.example.com"));
         assert!(server
             .config
             .domains
             .intercept_domains
-            .contains(&"*.staging.example.com".to_string()));
+            .iter()
+            .any(|s| s == "*.staging.example.com"));
         assert!(server
             .config
             .domains
             .intercept_domains
-            .contains(&"internal.service.com".to_string()));
+            .iter()
+            .any(|s| s == "internal.service.com"));
 
         assert_eq!(
             server
@@ -480,7 +496,8 @@ mod tests {
             .exclude_domains
             .as_ref()
             .unwrap()
-            .contains(&"admin.api.example.com".to_string()));
+            .iter()
+            .any(|s| s == "admin.api.example.com"));
     }
 
     #[tokio::test]
@@ -667,24 +684,28 @@ mod tests {
             Target {
                 name: "backend-with-weight".to_string(),
                 url: "http://192.168.1.100:8080".to_string(),
-                weight: Some(10),
+                address: "192.168.1.100:8080".to_string(),
+                weight: Some(10.0),
                 timeout: Some(45),
             },
             Target {
                 name: "backend-no-weight".to_string(),
                 url: "https://api.external.com".to_string(),
+                address: "api.external.com:443".to_string(),
                 weight: None,
                 timeout: Some(60),
             },
             Target {
                 name: "backend-no-timeout".to_string(),
                 url: "http://localhost:3000".to_string(),
-                weight: Some(1),
+                address: "localhost:3000".to_string(),
+                weight: Some(1.0),
                 timeout: None,
             },
             Target {
                 name: "backend-minimal".to_string(),
                 url: "http://127.0.0.1:4000".to_string(),
+                address: "127.0.0.1:4000".to_string(),
                 weight: None,
                 timeout: None,
             },
@@ -699,7 +720,7 @@ mod tests {
 
         // Check first target
         assert_eq!(server.config.targets.targets[0].name, "backend-with-weight");
-        assert_eq!(server.config.targets.targets[0].weight, Some(10));
+        assert_eq!(server.config.targets.targets[0].weight, Some(10.0));
         assert_eq!(server.config.targets.targets[0].timeout, Some(45));
 
         // Check second target
@@ -709,7 +730,7 @@ mod tests {
 
         // Check third target
         assert_eq!(server.config.targets.targets[2].name, "backend-no-timeout");
-        assert_eq!(server.config.targets.targets[2].weight, Some(1));
+        assert_eq!(server.config.targets.targets[2].weight, Some(1.0));
         assert_eq!(server.config.targets.targets[2].timeout, None);
 
         // Check fourth target
@@ -725,10 +746,18 @@ mod tests {
             let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
             let traffic_logger = create_test_traffic_logger();
             let start = std::time::Instant::now();
-            for _ in 0..100 { let _server = ProxyServer::new(config.clone(), bind_addr, traffic_logger.clone()); }
+            for _ in 0..100 {
+                let _server = ProxyServer::new(config.clone(), bind_addr, traffic_logger.clone());
+            }
             let duration = start.elapsed();
-            assert!(duration.as_millis() < 200, "Server creation took too long: {:?}", duration);
-        }).await.expect("test_proxy_server_creation_performance timed out");
+            assert!(
+                duration.as_millis() < 200,
+                "Server creation took too long: {:?}",
+                duration
+            );
+        })
+        .await
+        .expect("test_proxy_server_creation_performance timed out");
     }
 
     #[tokio::test]
@@ -745,7 +774,9 @@ mod tests {
             server_handle.abort();
             let result = server_handle.await;
             assert!(result.is_err(), "Server task should have been cancelled");
-        }).await.expect("test_proxy_server_run_method timed out");
+        })
+        .await
+        .expect("test_proxy_server_run_method timed out");
     }
 
     #[tokio::test]
@@ -761,8 +792,8 @@ mod tests {
             },
             {
                 let mut config = create_test_config();
-                config.server.keep_alive_timeout = Some(10);
-                config.server.request_timeout = Some(5);
+                config.server.max_connections = Some(500);
+                config.server.connection_timeout = Some(25);
                 config
             },
         ];
@@ -776,7 +807,9 @@ mod tests {
                 tokio::time::sleep(Duration::from_millis(30)).await;
                 server_handle.abort();
                 let _ = server_handle.await;
-            }).await.expect("test_proxy_server_run_with_different_configs timed out");
+            })
+            .await
+            .expect("test_proxy_server_run_with_different_configs timed out");
 
             tracing::debug!("Server config {} started successfully", i);
         }
@@ -797,7 +830,9 @@ mod tests {
             server_handle.abort();
             let result = server_handle.await;
             assert!(result.is_err(), "Server should have been cancelled");
-        }).await.expect("test_proxy_server_run_error_handling timed out");
+        })
+        .await
+        .expect("test_proxy_server_run_error_handling timed out");
     }
 
     #[tokio::test]
@@ -822,7 +857,10 @@ mod tests {
         }
 
         tokio::time::sleep(Duration::from_millis(100)).await;
-        for handle in handles { handle.abort(); let _ = handle.await; }
+        for handle in handles {
+            handle.abort();
+            let _ = handle.await;
+        }
     }
 
     #[tokio::test]
@@ -841,7 +879,9 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(50)).await;
             let result = server_handle.await;
             assert!(result.is_err(), "Server should have been cancelled");
-        }).await.expect("test_proxy_server_shutdown_behavior timed out");
+        })
+        .await
+        .expect("test_proxy_server_shutdown_behavior timed out");
     }
 
     #[tokio::test]
@@ -860,7 +900,9 @@ mod tests {
             assert!(!server_handle.is_finished(), "Server should be running");
             server_handle.abort();
             let _ = server_handle.await;
-        }).await.expect("test_proxy_server_with_tls_disabled timed out");
+        })
+        .await
+        .expect("test_proxy_server_with_tls_disabled timed out");
     }
 
     #[tokio::test]
@@ -899,7 +941,7 @@ mod tests {
     #[tokio::test]
     async fn test_proxy_server_error_handling() {
         // Test server error handling with invalid configuration
-        let mut config = create_test_config();
+        let config = create_test_config();
         // 暂时跳过无效地址测试，等待配置结构修复
         // config.server.bind_address = "invalid_address".parse().unwrap();
 
@@ -908,7 +950,7 @@ mod tests {
         let server = ProxyServer::new(config, bind_addr, traffic_logger);
 
         // Server should handle the error gracefully
-        let result = tokio::time::timeout(Duration::from_millis(100), server.run()).await;
+        let _result = tokio::time::timeout(Duration::from_millis(100), server.run()).await;
         // The result may vary depending on implementation, but should not panic
     }
 
@@ -926,10 +968,15 @@ mod tests {
             // Server should start with health checking enabled
             let server_handle = tokio::spawn(async move { server.run().await });
             tokio::time::sleep(Duration::from_millis(100)).await;
-            assert!(!server_handle.is_finished(), "Server should be running with health checks");
+            assert!(
+                !server_handle.is_finished(),
+                "Server should be running with health checks"
+            );
             server_handle.abort();
             let _ = server_handle.await;
-        }).await.expect("test_proxy_server_health_check_integration timed out");
+        })
+        .await
+        .expect("test_proxy_server_health_check_integration timed out");
     }
 
     #[tokio::test]
@@ -946,16 +993,21 @@ mod tests {
             // Server should start with traffic logging enabled
             let server_handle = tokio::spawn(async move { server.run().await });
             tokio::time::sleep(Duration::from_millis(100)).await;
-            assert!(!server_handle.is_finished(), "Server should be running with traffic logging");
+            assert!(
+                !server_handle.is_finished(),
+                "Server should be running with traffic logging"
+            );
             server_handle.abort();
             let _ = server_handle.await;
-        }).await.expect("test_proxy_server_traffic_logging_integration timed out");
+        })
+        .await
+        .expect("test_proxy_server_traffic_logging_integration timed out");
     }
 
     #[tokio::test]
     async fn test_proxy_server_with_caching_enabled() {
         let _ = tokio::time::timeout(Duration::from_secs(10), async {
-            let mut config = create_test_config();
+            let config = create_test_config();
             // 暂时跳过缓存配置测试，等待配置结构修复
             // config.caching = Some(crate::config::CacheConfig { ... });
 
@@ -966,10 +1018,15 @@ mod tests {
             // Server should start with caching enabled
             let server_handle = tokio::spawn(async move { server.run().await });
             tokio::time::sleep(Duration::from_millis(100)).await;
-            assert!(!server_handle.is_finished(), "Server should be running with caching");
+            assert!(
+                !server_handle.is_finished(),
+                "Server should be running with caching"
+            );
             server_handle.abort();
             let _ = server_handle.await;
-        }).await.expect("test_proxy_server_with_caching_enabled timed out");
+        })
+        .await
+        .expect("test_proxy_server_with_caching_enabled timed out");
     }
 
     #[tokio::test]
@@ -987,10 +1044,15 @@ mod tests {
             // Server should start with monitoring enabled
             let server_handle = tokio::spawn(async move { server.run().await });
             tokio::time::sleep(Duration::from_millis(100)).await;
-            assert!(!server_handle.is_finished(), "Server should be running with monitoring");
+            assert!(
+                !server_handle.is_finished(),
+                "Server should be running with monitoring"
+            );
             server_handle.abort();
             let _ = server_handle.await;
-        }).await.expect("test_proxy_server_monitoring_integration timed out");
+        })
+        .await
+        .expect("test_proxy_server_monitoring_integration timed out");
     }
 
     #[tokio::test]
@@ -1016,17 +1078,26 @@ mod tests {
                 // Server should start with different load balancing algorithms
                 let server_handle = tokio::spawn(async move { server.run().await });
                 tokio::time::sleep(Duration::from_millis(50)).await;
-                assert!(!server_handle.is_finished(), "Server should be running with {:?}", algorithm);
+                assert!(
+                    !server_handle.is_finished(),
+                    "Server should be running with {:?}",
+                    algorithm
+                );
                 server_handle.abort();
                 let _ = server_handle.await;
-            }).await.expect(&format!("test_proxy_server_load_balancing_algorithms timed out for {:?}", algorithm));
+            })
+            .await
+            .expect(&format!(
+                "test_proxy_server_load_balancing_algorithms timed out for {:?}",
+                algorithm
+            ));
         }
     }
 
     #[tokio::test]
     async fn test_proxy_server_with_security_enabled() {
         let _ = tokio::time::timeout(Duration::from_secs(10), async {
-            let mut config = create_test_config();
+            let config = create_test_config();
             // 暂时跳过安全配置测试，等待配置结构修复
             // config.security = Some(...);
 
@@ -1037,9 +1108,14 @@ mod tests {
             // Server should start with security enabled
             let server_handle = tokio::spawn(async move { server.run().await });
             tokio::time::sleep(Duration::from_millis(100)).await;
-            assert!(!server_handle.is_finished(), "Server should be running with security");
+            assert!(
+                !server_handle.is_finished(),
+                "Server should be running with security"
+            );
             server_handle.abort();
             let _ = server_handle.await;
-        }).await.expect("test_proxy_server_with_security_enabled timed out");
+        })
+        .await
+        .expect("test_proxy_server_with_security_enabled timed out");
     }
 }

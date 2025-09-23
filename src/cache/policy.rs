@@ -325,7 +325,8 @@ impl CacheDecision {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cache::{CacheConfig, CachePolicy, CachePolicyPattern};
+    use crate::config::cache::CachePolicyPattern;
+    use crate::config::{CacheConfig, CachePolicy};
     use hyper::{HeaderMap, StatusCode, Uri};
 
     fn create_test_config() -> CacheConfig {

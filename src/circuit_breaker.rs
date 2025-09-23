@@ -350,7 +350,9 @@ mod tests {
             let cb = CircuitBreaker::with_defaults("test".to_string());
             assert_eq!(cb.state().await, CircuitBreakerState::Closed);
             assert!(cb.can_execute().await);
-        }).await.expect("test_circuit_breaker_closed_state timed out");
+        })
+        .await
+        .expect("test_circuit_breaker_closed_state timed out");
     }
 
     #[tokio::test]
@@ -363,129 +365,139 @@ mod tests {
             let stats = cb.stats().await;
             assert_eq!(stats.success_count, 0);
             assert_eq!(stats.failure_count, 0);
-        }).await.expect("test_circuit_breaker_success timed out");
+        })
+        .await
+        .expect("test_circuit_breaker_success timed out");
     }
 
     #[tokio::test]
     async fn test_circuit_breaker_failure() {
         let _ = tokio::time::timeout(std::time::Duration::from_secs(10), async {
-        let config = CircuitBreakerConfig {
-            failure_threshold: 2,
-            min_requests: 2,
-            ..Default::default()
-        };
+            let config = CircuitBreakerConfig {
+                failure_threshold: 2,
+                min_requests: 2,
+                ..Default::default()
+            };
 
-        let cb = CircuitBreaker::new("test".to_string(), config);
+            let cb = CircuitBreaker::new("test".to_string(), config);
 
-        // First failure
-        let result = cb
-            .call(|| async { Err::<i32, DispaError>(DispaError::network("connection failed")) })
-            .await;
-        assert!(result.is_err());
-        assert_eq!(cb.state().await, CircuitBreakerState::Closed);
+            // First failure
+            let result = cb
+                .call(|| async { Err::<i32, DispaError>(DispaError::network("connection failed")) })
+                .await;
+            assert!(result.is_err());
+            assert_eq!(cb.state().await, CircuitBreakerState::Closed);
 
-        // Second failure should open the circuit
-        let result = cb
-            .call(|| async { Err::<i32, DispaError>(DispaError::network("connection failed")) })
-            .await;
-        assert!(result.is_err());
-        assert_eq!(cb.state().await, CircuitBreakerState::Open);
+            // Second failure should open the circuit
+            let result = cb
+                .call(|| async { Err::<i32, DispaError>(DispaError::network("connection failed")) })
+                .await;
+            assert!(result.is_err());
+            assert_eq!(cb.state().await, CircuitBreakerState::Open);
 
-        // Third call should be blocked
-        assert!(!cb.can_execute().await);
-        }).await.expect("test_circuit_breaker_failure timed out");
+            // Third call should be blocked
+            assert!(!cb.can_execute().await);
+        })
+        .await
+        .expect("test_circuit_breaker_failure timed out");
     }
 
     #[tokio::test]
     async fn test_circuit_breaker_half_open_transition() {
         let _ = tokio::time::timeout(std::time::Duration::from_secs(10), async {
-        let config = CircuitBreakerConfig {
-            failure_threshold: 1,
-            min_requests: 1,
-            timeout: Duration::from_millis(100),
-            ..Default::default()
-        };
+            let config = CircuitBreakerConfig {
+                failure_threshold: 1,
+                min_requests: 1,
+                timeout: Duration::from_millis(100),
+                ..Default::default()
+            };
 
-        let cb = CircuitBreaker::new("test".to_string(), config);
+            let cb = CircuitBreaker::new("test".to_string(), config);
 
-        // Trigger failure to open circuit
-        let _ = cb
-            .call(|| async { Err::<i32, DispaError>(DispaError::network("connection failed")) })
-            .await;
-        assert_eq!(cb.state().await, CircuitBreakerState::Open);
+            // Trigger failure to open circuit
+            let _ = cb
+                .call(|| async { Err::<i32, DispaError>(DispaError::network("connection failed")) })
+                .await;
+            assert_eq!(cb.state().await, CircuitBreakerState::Open);
 
-        // Wait for timeout
-        sleep(Duration::from_millis(150)).await;
+            // Wait for timeout
+            sleep(Duration::from_millis(150)).await;
 
-        // Should transition to half-open
-        assert!(cb.can_execute().await);
-        assert_eq!(cb.state().await, CircuitBreakerState::HalfOpen);
-        }).await.expect("test_circuit_breaker_half_open_transition timed out");
+            // Should transition to half-open
+            assert!(cb.can_execute().await);
+            assert_eq!(cb.state().await, CircuitBreakerState::HalfOpen);
+        })
+        .await
+        .expect("test_circuit_breaker_half_open_transition timed out");
     }
 
     #[tokio::test]
     async fn test_circuit_breaker_recovery() {
         let _ = tokio::time::timeout(std::time::Duration::from_secs(10), async {
-        let config = CircuitBreakerConfig {
-            failure_threshold: 1,
-            success_threshold: 2,
-            min_requests: 1,
-            timeout: Duration::from_millis(100),
-            ..Default::default()
-        };
+            let config = CircuitBreakerConfig {
+                failure_threshold: 1,
+                success_threshold: 2,
+                min_requests: 1,
+                timeout: Duration::from_millis(100),
+                ..Default::default()
+            };
 
-        let cb = CircuitBreaker::new("test".to_string(), config);
+            let cb = CircuitBreaker::new("test".to_string(), config);
 
-        // Trigger failure to open circuit
-        let _ = cb
-            .call(|| async { Err::<i32, DispaError>(DispaError::network("connection failed")) })
-            .await;
-        assert_eq!(cb.state().await, CircuitBreakerState::Open);
+            // Trigger failure to open circuit
+            let _ = cb
+                .call(|| async { Err::<i32, DispaError>(DispaError::network("connection failed")) })
+                .await;
+            assert_eq!(cb.state().await, CircuitBreakerState::Open);
 
-        // Wait for timeout and transition to half-open
-        sleep(Duration::from_millis(150)).await;
-        assert!(cb.can_execute().await);
-        assert_eq!(cb.state().await, CircuitBreakerState::HalfOpen);
+            // Wait for timeout and transition to half-open
+            sleep(Duration::from_millis(150)).await;
+            assert!(cb.can_execute().await);
+            assert_eq!(cb.state().await, CircuitBreakerState::HalfOpen);
 
-        // First success
-        let _ = cb.call(|| async { Ok::<i32, DispaError>(1) }).await;
-        assert_eq!(cb.state().await, CircuitBreakerState::HalfOpen);
+            // First success
+            let _ = cb.call(|| async { Ok::<i32, DispaError>(1) }).await;
+            assert_eq!(cb.state().await, CircuitBreakerState::HalfOpen);
 
-        // Second success should close the circuit
-        let _ = cb.call(|| async { Ok::<i32, DispaError>(2) }).await;
-        assert_eq!(cb.state().await, CircuitBreakerState::Closed);
-        }).await.expect("test_circuit_breaker_recovery timed out");
+            // Second success should close the circuit
+            let _ = cb.call(|| async { Ok::<i32, DispaError>(2) }).await;
+            assert_eq!(cb.state().await, CircuitBreakerState::Closed);
+        })
+        .await
+        .expect("test_circuit_breaker_recovery timed out");
     }
 
     #[tokio::test]
     async fn test_circuit_breaker_half_open_failure() {
         let _ = tokio::time::timeout(std::time::Duration::from_secs(10), async {
-        let config = CircuitBreakerConfig {
-            failure_threshold: 1,
-            min_requests: 1,
-            timeout: Duration::from_millis(100),
-            ..Default::default()
-        };
+            let config = CircuitBreakerConfig {
+                failure_threshold: 1,
+                min_requests: 1,
+                timeout: Duration::from_millis(100),
+                ..Default::default()
+            };
 
-        let cb = CircuitBreaker::new("test".to_string(), config);
+            let cb = CircuitBreaker::new("test".to_string(), config);
 
-        // Trigger failure to open circuit
-        let _ = cb
-            .call(|| async { Err::<i32, DispaError>(DispaError::network("connection failed")) })
-            .await;
-        assert_eq!(cb.state().await, CircuitBreakerState::Open);
+            // Trigger failure to open circuit
+            let _ = cb
+                .call(|| async { Err::<i32, DispaError>(DispaError::network("connection failed")) })
+                .await;
+            assert_eq!(cb.state().await, CircuitBreakerState::Open);
 
-        // Wait for timeout and transition to half-open
-        sleep(Duration::from_millis(150)).await;
-        assert!(cb.can_execute().await);
-        assert_eq!(cb.state().await, CircuitBreakerState::HalfOpen);
+            // Wait for timeout and transition to half-open
+            sleep(Duration::from_millis(150)).await;
+            assert!(cb.can_execute().await);
+            assert_eq!(cb.state().await, CircuitBreakerState::HalfOpen);
 
-        // Failure in half-open should go back to open
-        let _ = cb
-            .call(|| async { Err::<i32, DispaError>(DispaError::network("still failing")) })
-            .await;
-        assert_eq!(cb.state().await, CircuitBreakerState::Open);
-        }).await.expect("test_circuit_breaker_half_open_failure timed out");
+            // Failure in half-open should go back to open
+            let _ = cb
+                .call(|| async { Err::<i32, DispaError>(DispaError::network("still failing")) })
+                .await;
+            assert_eq!(cb.state().await, CircuitBreakerState::Open);
+        })
+        .await
+        .expect("test_circuit_breaker_half_open_failure timed out");
     }
 
     #[tokio::test]
@@ -499,7 +511,9 @@ mod tests {
             cb.force_open().await;
             cb.reset().await;
             assert_eq!(cb.state().await, CircuitBreakerState::Closed);
-        }).await.expect("test_circuit_breaker_force_operations timed out");
+        })
+        .await
+        .expect("test_circuit_breaker_force_operations timed out");
     }
 
     #[tokio::test]
@@ -511,6 +525,8 @@ mod tests {
             assert_eq!(stats.state, CircuitBreakerState::Closed);
             assert_eq!(stats.failure_count, 0);
             assert_eq!(stats.success_count, 0);
-        }).await.expect("test_circuit_breaker_stats timed out");
+        })
+        .await
+        .expect("test_circuit_breaker_stats timed out");
     }
 }

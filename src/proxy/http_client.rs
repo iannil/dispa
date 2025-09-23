@@ -1,13 +1,12 @@
-use anyhow::Result;
+use crate::config::HttpClientConfig;
+use crate::error::{DispaError, DispaResult};
+use hyper::body::HttpBody as _;
 use hyper::client::HttpConnector;
 use hyper::{Body, Client, Request, Response, Uri};
 use hyper_rustls::HttpsConnectorBuilder;
 use once_cell::sync::Lazy;
 use std::sync::RwLock;
 use std::time::Duration;
-use crate::config::HttpClientConfig;
-use crate::error::{DispaError, DispaResult};
-use hyper::body::HttpBody as _;
 use tokio::sync::oneshot;
 
 /// Shared hyper client with connection pooling (HTTP/HTTPS via rustls)
@@ -16,8 +15,9 @@ use tokio::sync::oneshot;
 /// - Tuned pool settings to reduce connection churn under load
 /// - Supports both http and https upstreams
 #[allow(clippy::type_complexity)]
-static SHARED_CLIENT: Lazy<RwLock<std::sync::Arc<Client<hyper_rustls::HttpsConnector<HttpConnector>, Body>>>> =
-    Lazy::new(|| RwLock::new(std::sync::Arc::new(build_client(None))));
+static SHARED_CLIENT: Lazy<
+    RwLock<std::sync::Arc<Client<hyper_rustls::HttpsConnector<HttpConnector>, Body>>>,
+> = Lazy::new(|| RwLock::new(std::sync::Arc::new(build_client(None))));
 
 // Request-level timeout for upstream calls (connect + first response byte)
 // Kept configurable via HttpClientConfig.connect_timeout_secs; defaults to 5s.
@@ -48,7 +48,9 @@ fn get_client() -> std::sync::Arc<Client<hyper_rustls::HttpsConnector<HttpConnec
         .unwrap_or_else(|| std::sync::Arc::new(build_client(None)))
 }
 
-fn build_client(config: Option<&HttpClientConfig>) -> Client<hyper_rustls::HttpsConnector<HttpConnector>, Body> {
+fn build_client(
+    config: Option<&HttpClientConfig>,
+) -> Client<hyper_rustls::HttpsConnector<HttpConnector>, Body> {
     // Base TCP connector
     let mut http = HttpConnector::new();
     http.enforce_http(false); // allow absolute-form URIs
@@ -63,12 +65,8 @@ fn build_client(config: Option<&HttpClientConfig>) -> Client<hyper_rustls::Https
         .build();
 
     // Pull tunables from config or use defaults
-    let pool_idle_timeout_secs = config
-        .and_then(|c| c.pool_idle_timeout_secs)
-        .unwrap_or(90);
-    let pool_max_idle_per_host = config
-        .and_then(|c| c.pool_max_idle_per_host)
-        .unwrap_or(32);
+    let pool_idle_timeout_secs = config.and_then(|c| c.pool_idle_timeout_secs).unwrap_or(90);
+    let pool_max_idle_per_host = config.and_then(|c| c.pool_max_idle_per_host).unwrap_or(32);
 
     Client::builder()
         .pool_idle_timeout(Duration::from_secs(pool_idle_timeout_secs))
@@ -82,28 +80,64 @@ fn build_client(config: Option<&HttpClientConfig>) -> Client<hyper_rustls::Https
 /// Forward with optional streaming body limit (does not aggregate the full body).
 /// If `limit` is set and `Content-Length` is present and exceeds the limit, returns PayloadTooLarge immediately.
 /// If `Content-Length` is absent, streams the body and aborts when limit is exceeded, mapping to PayloadTooLarge.
-pub async fn forward_with_limit(req: Request<Body>, target_base: &str, limit: Option<u64>) -> DispaResult<Response<Body>> {
+pub async fn forward_with_limit(
+    req: Request<Body>,
+    target_base: &str,
+    limit: Option<u64>,
+) -> DispaResult<Response<Body>> {
     if let Some(max) = limit {
-        if let Some(len) = req.headers().get(hyper::header::CONTENT_LENGTH).and_then(|v| v.to_str().ok()).and_then(|s| s.parse::<u64>().ok()) {
+        if let Some(len) = req
+            .headers()
+            .get(hyper::header::CONTENT_LENGTH)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.parse::<u64>().ok())
+        {
             if len > max {
-                return Err(DispaError::PayloadTooLarge { message: format!("content-length {} exceeds limit {}", len, max) });
+                return Err(DispaError::PayloadTooLarge {
+                    message: format!("content-length {} exceeds limit {}", len, max),
+                });
             }
         }
     }
 
     // Build upstream request parts first (we will replace body if limit enforced)
-    let base: Uri = target_base.parse().map_err(|e| DispaError::proxy(format!("invalid target url: {}", e)))?;
+    let base: Uri = target_base
+        .parse()
+        .map_err(|e| DispaError::proxy(format!("invalid target url: {}", e)))?;
     let (mut parts, orig_body) = req.into_parts();
 
-    let pq = parts.uri.path_and_query().map(|pq| pq.as_str().to_string()).unwrap_or_else(|| "/".to_string());
+    let pq = parts
+        .uri
+        .path_and_query()
+        .map(|pq| pq.as_str().to_string())
+        .unwrap_or_else(|| "/".to_string());
     let scheme = base.scheme_str().unwrap_or("http");
-    let authority = base.authority().ok_or_else(|| DispaError::proxy(format!("target URI missing authority: {}", target_base)))?;
-    let new_uri: Uri = format!("{}://{}{}", scheme, authority, pq).parse().map_err(|e| DispaError::proxy(format!("invalid upstream uri: {}", e)))?;
+    let authority = base.authority().ok_or_else(|| {
+        DispaError::proxy(format!("target URI missing authority: {}", target_base))
+    })?;
+    let new_uri: Uri = format!("{}://{}{}", scheme, authority, pq)
+        .parse()
+        .map_err(|e| DispaError::proxy(format!("invalid upstream uri: {}", e)))?;
     parts.uri = new_uri;
     strip_hop_by_hop_headers(&mut parts.headers);
-    parts.headers.insert(hyper::header::HOST, authority.as_str().parse().map_err(|e| DispaError::proxy(format!("bad host header: {}", e)))?);
-    parts.headers.entry("x-forwarded-proto").or_insert_with(|| if scheme == "https" { hyper::header::HeaderValue::from_static("https") } else { hyper::header::HeaderValue::from_static("http") });
-    parts.headers.entry("x-forwarded-for").or_insert_with(|| hyper::header::HeaderValue::from_static("127.0.0.1"));
+    parts.headers.insert(
+        hyper::header::HOST,
+        authority
+            .as_str()
+            .parse()
+            .map_err(|e| DispaError::proxy(format!("bad host header: {}", e)))?,
+    );
+    parts.headers.entry("x-forwarded-proto").or_insert_with(|| {
+        if scheme == "https" {
+            hyper::header::HeaderValue::from_static("https")
+        } else {
+            hyper::header::HeaderValue::from_static("http")
+        }
+    });
+    parts
+        .headers
+        .entry("x-forwarded-for")
+        .or_insert_with(|| hyper::header::HeaderValue::from_static("127.0.0.1"));
 
     let client = get_client();
 
@@ -121,26 +155,42 @@ pub async fn forward_with_limit(req: Request<Body>, target_base: &str, limit: Op
                     Some(Ok(chunk)) => {
                         sent += chunk.len() as u64;
                         _chunks += 1;
-                        metrics::counter!("dispa_request_body_stream_chunks_total", &labels).increment(1);
-                        metrics::counter!("dispa_request_body_stream_bytes_total", &labels).increment(chunk.len() as u64);
+                        metrics::counter!("dispa_request_body_stream_chunks_total", &labels)
+                            .increment(1);
+                        metrics::counter!("dispa_request_body_stream_bytes_total", &labels)
+                            .increment(chunk.len() as u64);
                         if sent > max {
                             // exceed: drop sender and notify
-                            metrics::counter!("dispa_security_denied_total", &[("kind", "body_stream_too_large".to_string())]).increment(1);
+                            metrics::counter!(
+                                "dispa_security_denied_total",
+                                &[("kind", "body_stream_too_large")]
+                            )
+                            .increment(1);
                             let _ = signal_tx.send(());
                             tx.abort();
                             break;
                         }
-                        if let Err(_e) = tx.send_data(chunk).await { break; }
+                        if let Err(_e) = tx.send_data(chunk).await {
+                            break;
+                        }
                     }
-                    Some(Err(_e)) => { tx.abort(); break; }
-                    None => { break; }
+                    Some(Err(_e)) => {
+                        tx.abort();
+                        break;
+                    }
+                    None => {
+                        break;
+                    }
                 }
             }
         });
 
         let upstream_req = Request::from_parts(parts, body);
         let fut = client.request(upstream_req);
-        let timeout = { let g = REQUEST_TIMEOUT_SECS.read().unwrap(); Duration::from_secs(*g) };
+        let timeout = {
+            let g = REQUEST_TIMEOUT_SECS.read().unwrap();
+            Duration::from_secs(*g)
+        };
         let out: DispaResult<Response<Body>> = tokio::select! {
             _ = &mut signal_rx => {
                 Err(DispaError::PayloadTooLarge { message: "streamed body exceeded limit".into() })
@@ -157,18 +207,21 @@ pub async fn forward_with_limit(req: Request<Body>, target_base: &str, limit: Op
     } else {
         // No limit: use original body
         let upstream_req = Request::from_parts(parts, orig_body);
-        let timeout = { let g = REQUEST_TIMEOUT_SECS.read().unwrap(); Duration::from_secs(*g) };
+        let timeout = {
+            let g = REQUEST_TIMEOUT_SECS.read().unwrap();
+            Duration::from_secs(*g)
+        };
         let fut = client.request(upstream_req);
         let upstream_res = tokio::time::timeout(timeout, fut)
             .await
             .map_err(|_| DispaError::timeout(timeout, "HTTP request"))?
-            .map_err(|e| DispaError::from(e))?;
+            .map_err(DispaError::from)?;
         Ok(build_downstream_response(upstream_res))
     }
 }
 
 /// Lightweight GET that returns only status code. Request-level timeout is enforced.
-pub async fn get_status(url: &str, timeout: Duration) -> Result<hyper::StatusCode> {
+pub async fn get_status(url: &str, timeout: Duration) -> DispaResult<hyper::StatusCode> {
     let uri: Uri = url.parse()?;
     let req = Request::builder()
         .method(hyper::Method::GET)
@@ -194,22 +247,24 @@ fn build_downstream_response(upstream: Response<Body>) -> Response<Body> {
         }
     }
 
-    builder.body(body).unwrap_or_else(|_| Response::new(Body::empty()))
+    builder
+        .body(body)
+        .unwrap_or_else(|_| Response::new(Body::empty()))
 }
 
 // Keep this small helper local; duplicate of handler.rs but isolated to avoid coupling
 fn is_hop_by_hop_header(name: &str) -> bool {
-    match name.to_ascii_lowercase().as_str() {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
         "connection"
-        | "keep-alive"
-        | "proxy-authenticate"
-        | "proxy-authorization"
-        | "te"
-        | "trailers"
-        | "transfer-encoding"
-        | "upgrade" => true,
-        _ => false,
-    }
+            | "keep-alive"
+            | "proxy-authenticate"
+            | "proxy-authorization"
+            | "te"
+            | "trailers"
+            | "transfer-encoding"
+            | "upgrade"
+    )
 }
 
 fn strip_hop_by_hop_headers(headers: &mut hyper::HeaderMap) {
@@ -257,7 +312,12 @@ mod tests {
                 .body(body)
                 .unwrap();
             let res = forward_with_limit(req, "http://127.0.0.1:9", Some(10)).await;
-            assert!(matches!(res, Err(crate::error::DispaError::PayloadTooLarge { .. })));
-        }).await.expect("test_forward_with_limit_content_length_exceed timed out");
+            assert!(matches!(
+                res,
+                Err(crate::error::DispaError::PayloadTooLarge { .. })
+            ));
+        })
+        .await
+        .expect("test_forward_with_limit_content_length_exceed timed out");
     }
 }

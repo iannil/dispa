@@ -321,6 +321,34 @@ impl From<notify::Error> for DispaError {
     }
 }
 
+/// Convert from serde_json::Error to DispaError
+impl From<serde_json::Error> for DispaError {
+    fn from(err: serde_json::Error) -> Self {
+        DispaError::internal(format!("JSON serialization error: {}", err))
+    }
+}
+
+/// Convert from hyper::http::uri::InvalidUri to DispaError
+impl From<hyper::http::uri::InvalidUri> for DispaError {
+    fn from(err: hyper::http::uri::InvalidUri) -> Self {
+        DispaError::config(format!("Invalid URI: {}", err))
+    }
+}
+
+/// Convert from hyper::http::Error to DispaError
+impl From<hyper::http::Error> for DispaError {
+    fn from(err: hyper::http::Error) -> Self {
+        DispaError::network(format!("HTTP error: {}", err))
+    }
+}
+
+/// Convert from tokio::time::Elapsed to DispaError
+impl From<tokio::time::error::Elapsed> for DispaError {
+    fn from(_: tokio::time::error::Elapsed) -> Self {
+        DispaError::timeout(Duration::from_secs(30), "operation")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

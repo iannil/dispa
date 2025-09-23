@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use anyhow::Result;
 use chrono::Utc;
 use hyper::header::HOST;
@@ -36,7 +37,9 @@ impl CachedProxyHandler {
     ) -> Self {
         let (cache, policy_engine, etag_manager) = if let Some(config) = cache_config {
             if config.enabled {
-                let cache = std::sync::Arc::new(tokio::sync::RwLock::new(InMemoryCache::new(config.clone())));
+                let cache = std::sync::Arc::new(tokio::sync::RwLock::new(InMemoryCache::new(
+                    config.clone(),
+                )));
                 let policy_engine = std::sync::Arc::new(PolicyEngine::new(config.clone()));
                 let etag_manager = std::sync::Arc::new(ETagManager::new(config.etag_enabled));
                 (Some(cache), Some(policy_engine), Some(etag_manager))
@@ -184,12 +187,14 @@ impl CachedProxyHandler {
                 if let Ok(etag_value) = if_none_match.to_str() {
                     if cached_entry.matches_etag(etag_value) {
                         debug!("ETag match, returning 304 Not Modified");
-                        return Some(Response::builder()
-                            .status(StatusCode::NOT_MODIFIED)
-                            .header("ETag", cached_entry.etag.as_ref().unwrap())
-                            .header("X-Cache", "HIT-CONDITIONAL")
-                            .body(Body::empty())
-                            .unwrap());
+                        return Some(
+                            Response::builder()
+                                .status(StatusCode::NOT_MODIFIED)
+                                .header("ETag", cached_entry.etag.as_ref().unwrap())
+                                .header("X-Cache", "HIT-CONDITIONAL")
+                                .body(Body::empty())
+                                .unwrap(),
+                        );
                     }
                 }
             }
@@ -330,12 +335,7 @@ impl CachedProxyHandler {
 
         // Check if response should be cached using the correct API
         let status = response.status();
-        let cache_decision = policy_engine.should_cache(
-            uri,
-            headers,
-            status,
-            response.headers()
-        );
+        let cache_decision = policy_engine.should_cache(uri, headers, status, response.headers());
 
         if !cache_decision.should_cache() {
             if let Some(reason) = cache_decision.no_cache_reason() {
@@ -355,8 +355,15 @@ impl CachedProxyHandler {
         };
 
         // Create cache entry
-        let ttl = cache_decision.ttl().unwrap_or(std::time::Duration::from_secs(3600));
-        let cache_entry = CacheEntry::new(parts.status, parts.headers.clone(), body_bytes.to_vec(), ttl);
+        let ttl = cache_decision
+            .ttl()
+            .unwrap_or(std::time::Duration::from_secs(3600));
+        let cache_entry = CacheEntry::new(
+            parts.status,
+            parts.headers.clone(),
+            body_bytes.to_vec(),
+            ttl,
+        );
 
         // Generate cache key
         let cache_key = format!("{}:{}", "GET", uri.path());
@@ -463,12 +470,14 @@ impl CachedProxyHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{CacheConfig, CachePolicy, CachePolicyPattern, LoadBalancingConfig, LoadBalancingType, HealthCheckConfig, DomainConfig, TargetConfig, Target};
     use crate::balancer::LoadBalancer;
-    use crate::logger::TrafficLogger;
+    use crate::config::cache::CachePolicyPattern;
     use crate::config::LoggingConfig;
-    use hyper::{Request, Body, Method};
-    use std::time::Duration;
+    use crate::config::{
+        CacheConfig, CachePolicy, DomainConfig, HealthCheckConfig, LoadBalancingConfig,
+        LoadBalancingType, Target, TargetConfig,
+    };
+    use crate::logger::TrafficLogger;
 
     fn create_test_cache_config() -> CacheConfig {
         CacheConfig {
@@ -478,16 +487,14 @@ mod tests {
             etag_enabled: true,
             key_prefix: Some("test_".to_string()),
             metrics_enabled: true,
-            policies: vec![
-                CachePolicy {
-                    name: "api_cache".to_string(),
-                    pattern: CachePolicyPattern::PathPrefix("/api/".to_string()),
-                    ttl: Some(600),
-                    cacheable_status_codes: vec![200, 301, 302],
-                    vary_headers: Some(vec!["Accept-Language".to_string()]),
-                    no_cache_headers: vec!["Cache-Control".to_string()],
-                }
-            ],
+            policies: vec![CachePolicy {
+                name: "api_cache".to_string(),
+                pattern: CachePolicyPattern::PathPrefix("/api/".to_string()),
+                ttl: Some(600),
+                cacheable_status_codes: vec![200, 301, 302],
+                vary_headers: Some(vec!["Accept-Language".to_string()]),
+                no_cache_headers: vec!["Cache-Control".to_string()],
+            }],
         }
     }
 
@@ -501,17 +508,17 @@ mod tests {
 
     fn create_test_target_config() -> TargetConfig {
         TargetConfig {
-            targets: vec![
-                Target {
-                    name: "test-backend-1".to_string(),
-                    url: "http://127.0.0.1:3001".to_string(),
-                    weight: Some(1),
-                    timeout: Some(30),
-                },
-            ],
+            targets: vec![Target {
+                name: "test-backend-1".to_string(),
+                url: "http://127.0.0.1:3001".to_string(),
+                address: "127.0.0.1:3001".to_string(),
+                weight: Some(1.0),
+                timeout: Some(30),
+            }],
             load_balancing: LoadBalancingConfig {
+                algorithm: LoadBalancingType::RoundRobin,
                 lb_type: LoadBalancingType::RoundRobin,
-                sticky_sessions: false,
+                sticky_sessions: Some(false),
             },
             health_check: HealthCheckConfig {
                 enabled: false,
@@ -519,6 +526,7 @@ mod tests {
                 timeout: 5,
                 healthy_threshold: 2,
                 unhealthy_threshold: 3,
+                threshold: 2,
             },
         }
     }
@@ -535,17 +543,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_cached_proxy_handler_creation() {
-        let domain_config = std::sync::Arc::new(std::sync::RwLock::new(create_test_domain_config()));
-        let load_balancer = std::sync::Arc::new(tokio::sync::RwLock::new(LoadBalancer::new_for_test(create_test_target_config())));
+        let domain_config =
+            std::sync::Arc::new(std::sync::RwLock::new(create_test_domain_config()));
+        let load_balancer = std::sync::Arc::new(tokio::sync::RwLock::new(
+            LoadBalancer::new_for_test(create_test_target_config()),
+        ));
         let traffic_logger = create_test_traffic_logger();
         let cache_config = Some(create_test_cache_config());
 
-        let handler = CachedProxyHandler::new(
-            domain_config,
-            load_balancer,
-            traffic_logger,
-            cache_config,
-        );
+        let handler =
+            CachedProxyHandler::new(domain_config, load_balancer, traffic_logger, cache_config);
 
         // Verify handler was created successfully
         assert!(handler.cache.is_some());
@@ -555,8 +562,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_cached_proxy_handler_without_cache() {
-        let domain_config = std::sync::Arc::new(std::sync::RwLock::new(create_test_domain_config()));
-        let load_balancer = std::sync::Arc::new(tokio::sync::RwLock::new(LoadBalancer::new_for_test(create_test_target_config())));
+        let domain_config =
+            std::sync::Arc::new(std::sync::RwLock::new(create_test_domain_config()));
+        let load_balancer = std::sync::Arc::new(tokio::sync::RwLock::new(
+            LoadBalancer::new_for_test(create_test_target_config()),
+        ));
         let traffic_logger = create_test_traffic_logger();
 
         let handler = CachedProxyHandler::new(
@@ -574,8 +584,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_cached_proxy_handler_with_routing() {
-        let domain_config = std::sync::Arc::new(std::sync::RwLock::new(create_test_domain_config()));
-        let load_balancer = std::sync::Arc::new(tokio::sync::RwLock::new(LoadBalancer::new_for_test(create_test_target_config())));
+        let domain_config =
+            std::sync::Arc::new(std::sync::RwLock::new(create_test_domain_config()));
+        let load_balancer = std::sync::Arc::new(tokio::sync::RwLock::new(
+            LoadBalancer::new_for_test(create_test_target_config()),
+        ));
         let traffic_logger = create_test_traffic_logger();
         let routing_engine = std::sync::Arc::new(tokio::sync::RwLock::new(None));
         let cache_config = Some(create_test_cache_config());
@@ -599,15 +612,13 @@ mod tests {
         domain_config.intercept_domains = vec!["api.example.com".to_string()];
 
         let domain_config_arc = std::sync::Arc::new(std::sync::RwLock::new(domain_config));
-        let load_balancer = std::sync::Arc::new(tokio::sync::RwLock::new(LoadBalancer::new_for_test(create_test_target_config())));
+        let load_balancer = std::sync::Arc::new(tokio::sync::RwLock::new(
+            LoadBalancer::new_for_test(create_test_target_config()),
+        ));
         let traffic_logger = create_test_traffic_logger();
 
-        let handler = CachedProxyHandler::new(
-            domain_config_arc,
-            load_balancer,
-            traffic_logger,
-            None,
-        );
+        let handler =
+            CachedProxyHandler::new(domain_config_arc, load_balancer, traffic_logger, None);
 
         // Test domain matching
         assert!(handler.should_intercept_domain("api.example.com"));
@@ -616,17 +627,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_cache_clear() {
-        let domain_config = std::sync::Arc::new(std::sync::RwLock::new(create_test_domain_config()));
-        let load_balancer = std::sync::Arc::new(tokio::sync::RwLock::new(LoadBalancer::new_for_test(create_test_target_config())));
+        let domain_config =
+            std::sync::Arc::new(std::sync::RwLock::new(create_test_domain_config()));
+        let load_balancer = std::sync::Arc::new(tokio::sync::RwLock::new(
+            LoadBalancer::new_for_test(create_test_target_config()),
+        ));
         let traffic_logger = create_test_traffic_logger();
         let cache_config = Some(create_test_cache_config());
 
-        let handler = CachedProxyHandler::new(
-            domain_config,
-            load_balancer,
-            traffic_logger,
-            cache_config,
-        );
+        let handler =
+            CachedProxyHandler::new(domain_config, load_balancer, traffic_logger, cache_config);
 
         // Clear cache should not panic
         handler.clear_cache().await;
@@ -634,17 +644,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_cache_stats() {
-        let domain_config = std::sync::Arc::new(std::sync::RwLock::new(create_test_domain_config()));
-        let load_balancer = std::sync::Arc::new(tokio::sync::RwLock::new(LoadBalancer::new_for_test(create_test_target_config())));
+        let domain_config =
+            std::sync::Arc::new(std::sync::RwLock::new(create_test_domain_config()));
+        let load_balancer = std::sync::Arc::new(tokio::sync::RwLock::new(
+            LoadBalancer::new_for_test(create_test_target_config()),
+        ));
         let traffic_logger = create_test_traffic_logger();
         let cache_config = Some(create_test_cache_config());
 
-        let handler = CachedProxyHandler::new(
-            domain_config,
-            load_balancer,
-            traffic_logger,
-            cache_config,
-        );
+        let handler =
+            CachedProxyHandler::new(domain_config, load_balancer, traffic_logger, cache_config);
 
         // Get cache stats should return valid metrics
         let stats = handler.get_cache_stats().await;

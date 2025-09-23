@@ -428,233 +428,255 @@ mod tests {
             assert_eq!(stats.entry_count, 0);
             assert_eq!(stats.total_size, 0);
             assert_eq!(stats.max_size, 1024);
-        }).await.expect("test_cache_creation timed out");
+        })
+        .await
+        .expect("test_cache_creation timed out");
     }
 
     #[tokio::test]
     async fn test_cache_put_and_get() {
         let _ = tokio::time::timeout(Duration::from_secs(5), async {
-        let config = create_test_config();
-        let cache = InMemoryCache::new(config);
+            let config = create_test_config();
+            let cache = InMemoryCache::new(config);
 
-        let entry = create_test_entry("test data", 60);
-        let key = "test_key".to_string();
+            let entry = create_test_entry("test data", 60);
+            let key = "test_key".to_string();
 
-        // Store entry
-        cache.put(key.clone(), entry.clone()).await.unwrap();
+            // Store entry
+            cache.put(key.clone(), entry.clone()).await.unwrap();
 
-        // Retrieve entry
-        let retrieved = cache.get(&key).await.unwrap();
-        assert_eq!(retrieved.body, entry.body);
-        assert_eq!(retrieved.status, entry.status);
+            // Retrieve entry
+            let retrieved = cache.get(&key).await.unwrap();
+            assert_eq!(retrieved.body, entry.body);
+            assert_eq!(retrieved.status, entry.status);
 
-        // Check stats
-        let stats = cache.stats().await;
-        assert_eq!(stats.entry_count, 1);
-        assert!(stats.total_size > 0);
-        assert_eq!(stats.hits, 1);
-        assert_eq!(stats.stores, 1);
-        }).await.expect("test_cache_put_and_get timed out");
+            // Check stats
+            let stats = cache.stats().await;
+            assert_eq!(stats.entry_count, 1);
+            assert!(stats.total_size > 0);
+            assert_eq!(stats.hits, 1);
+            assert_eq!(stats.stores, 1);
+        })
+        .await
+        .expect("test_cache_put_and_get timed out");
     }
 
     #[tokio::test]
     async fn test_cache_miss() {
         let _ = tokio::time::timeout(Duration::from_secs(5), async {
-        let config = create_test_config();
-        let cache = InMemoryCache::new(config);
+            let config = create_test_config();
+            let cache = InMemoryCache::new(config);
 
-        let result = cache.get("nonexistent").await;
-        assert!(result.is_none());
+            let result = cache.get("nonexistent").await;
+            assert!(result.is_none());
 
-        let stats = cache.stats().await;
-        assert_eq!(stats.misses, 1);
-        }).await.expect("test_cache_miss timed out");
+            let stats = cache.stats().await;
+            assert_eq!(stats.misses, 1);
+        })
+        .await
+        .expect("test_cache_miss timed out");
     }
 
     #[tokio::test]
     async fn test_cache_expiration() {
         let _ = tokio::time::timeout(Duration::from_secs(5), async {
-        let config = create_test_config();
-        let cache = InMemoryCache::new(config);
+            let config = create_test_config();
+            let cache = InMemoryCache::new(config);
 
-        // Create entry with very short TTL
-        let entry = create_test_entry("test data", 0); // 0 seconds TTL
-        let key = "test_key".to_string();
+            // Create entry with very short TTL
+            let entry = create_test_entry("test data", 0); // 0 seconds TTL
+            let key = "test_key".to_string();
 
-        cache.put(key.clone(), entry).await.unwrap();
+            cache.put(key.clone(), entry).await.unwrap();
 
-        // Wait a bit to ensure expiration
-        sleep(Duration::from_millis(10)).await;
+            // Wait a bit to ensure expiration
+            sleep(Duration::from_millis(10)).await;
 
-        // Should not retrieve expired entry
-        let result = cache.get(&key).await;
-        assert!(result.is_none());
+            // Should not retrieve expired entry
+            let result = cache.get(&key).await;
+            assert!(result.is_none());
 
-        let stats = cache.stats().await;
-        assert_eq!(stats.misses, 1); // Should count as miss
-        }).await.expect("test_cache_expiration timed out");
+            let stats = cache.stats().await;
+            assert_eq!(stats.misses, 1); // Should count as miss
+        })
+        .await
+        .expect("test_cache_expiration timed out");
     }
 
     #[tokio::test]
     async fn test_cache_remove() {
         let _ = tokio::time::timeout(Duration::from_secs(5), async {
-        let config = create_test_config();
-        let cache = InMemoryCache::new(config);
+            let config = create_test_config();
+            let cache = InMemoryCache::new(config);
 
-        let entry = create_test_entry("test data", 60);
-        let key = "test_key".to_string();
+            let entry = create_test_entry("test data", 60);
+            let key = "test_key".to_string();
 
-        cache.put(key.clone(), entry).await.unwrap();
+            cache.put(key.clone(), entry).await.unwrap();
 
-        // Remove entry
-        let removed = cache.remove(&key).await.unwrap();
-        assert_eq!(removed.body, b"test data");
+            // Remove entry
+            let removed = cache.remove(&key).await.unwrap();
+            assert_eq!(removed.body, b"test data");
 
-        // Should not find entry after removal
-        let result = cache.get(&key).await;
-        assert!(result.is_none());
+            // Should not find entry after removal
+            let result = cache.get(&key).await;
+            assert!(result.is_none());
 
-        let stats = cache.stats().await;
-        assert_eq!(stats.entry_count, 0);
-        assert_eq!(stats.total_size, 0);
-        }).await.expect("test_cache_remove timed out");
+            let stats = cache.stats().await;
+            assert_eq!(stats.entry_count, 0);
+            assert_eq!(stats.total_size, 0);
+        })
+        .await
+        .expect("test_cache_remove timed out");
     }
 
     #[tokio::test]
     async fn test_cache_clear() {
         let _ = tokio::time::timeout(Duration::from_secs(5), async {
-        let config = create_test_config();
-        let cache = InMemoryCache::new(config);
+            let config = create_test_config();
+            let cache = InMemoryCache::new(config);
 
-        // Add multiple entries
-        for i in 0..3 {
-            let entry = create_test_entry(&format!("data{}", i), 60);
-            cache.put(format!("key{}", i), entry).await.unwrap();
-        }
+            // Add multiple entries
+            for i in 0..3 {
+                let entry = create_test_entry(&format!("data{}", i), 60);
+                cache.put(format!("key{}", i), entry).await.unwrap();
+            }
 
-        let stats_before = cache.stats().await;
-        assert_eq!(stats_before.entry_count, 3);
+            let stats_before = cache.stats().await;
+            assert_eq!(stats_before.entry_count, 3);
 
-        // Clear cache
-        cache.clear().await;
+            // Clear cache
+            cache.clear().await;
 
-        let stats_after = cache.stats().await;
-        assert_eq!(stats_after.entry_count, 0);
-        assert_eq!(stats_after.total_size, 0);
-        }).await.expect("test_cache_clear timed out");
+            let stats_after = cache.stats().await;
+            assert_eq!(stats_after.entry_count, 0);
+            assert_eq!(stats_after.total_size, 0);
+        })
+        .await
+        .expect("test_cache_clear timed out");
     }
 
     #[tokio::test]
     async fn test_cache_size_limit_eviction() {
         let _ = tokio::time::timeout(Duration::from_secs(5), async {
-        let config = create_test_config(); // 1KB limit
-        let cache = InMemoryCache::new(config);
+            let config = create_test_config(); // 1KB limit
+            let cache = InMemoryCache::new(config);
 
-        // Create entries that will exceed the limit
-        let large_data = "x".repeat(400); // 400 bytes each
+            // Create entries that will exceed the limit
+            let large_data = "x".repeat(400); // 400 bytes each
 
-        // Add entries until we exceed the limit
-        for i in 0..4 {
-            let entry = create_test_entry(&large_data, 60);
-            cache.put(format!("key{}", i), entry).await.unwrap();
-        }
+            // Add entries until we exceed the limit
+            for i in 0..4 {
+                let entry = create_test_entry(&large_data, 60);
+                cache.put(format!("key{}", i), entry).await.unwrap();
+            }
 
-        let stats = cache.stats().await;
-        assert!(stats.total_size <= 1024); // Should not exceed limit
-        assert!(stats.evictions > 0); // Should have evicted some entries
-        assert!(stats.entry_count < 4); // Should have fewer than 4 entries
-        }).await.expect("test_cache_size_limit_eviction timed out");
+            let stats = cache.stats().await;
+            assert!(stats.total_size <= 1024); // Should not exceed limit
+            assert!(stats.evictions > 0); // Should have evicted some entries
+            assert!(stats.entry_count < 4); // Should have fewer than 4 entries
+        })
+        .await
+        .expect("test_cache_size_limit_eviction timed out");
     }
 
     #[tokio::test]
     async fn test_cache_contains_key() {
         let _ = tokio::time::timeout(Duration::from_secs(5), async {
-        let config = create_test_config();
-        let cache = InMemoryCache::new(config);
+            let config = create_test_config();
+            let cache = InMemoryCache::new(config);
 
-        let entry = create_test_entry("test data", 60);
-        let key = "test_key".to_string();
+            let entry = create_test_entry("test data", 60);
+            let key = "test_key".to_string();
 
-        assert!(!cache.contains_key(&key).await);
+            assert!(!cache.contains_key(&key).await);
 
-        cache.put(key.clone(), entry).await.unwrap();
-        assert!(cache.contains_key(&key).await);
+            cache.put(key.clone(), entry).await.unwrap();
+            assert!(cache.contains_key(&key).await);
 
-        cache.remove(&key).await;
-        assert!(!cache.contains_key(&key).await);
-        }).await.expect("test_cache_contains_key timed out");
+            cache.remove(&key).await;
+            assert!(!cache.contains_key(&key).await);
+        })
+        .await
+        .expect("test_cache_contains_key timed out");
     }
 
     #[tokio::test]
     async fn test_cache_disabled() {
         let _ = tokio::time::timeout(Duration::from_secs(5), async {
-        let mut config = create_test_config();
-        config.enabled = false;
-        let cache = InMemoryCache::new(config);
+            let mut config = create_test_config();
+            config.enabled = false;
+            let cache = InMemoryCache::new(config);
 
-        let entry = create_test_entry("test data", 60);
-        let key = "test_key".to_string();
+            let entry = create_test_entry("test data", 60);
+            let key = "test_key".to_string();
 
-        // Operations should succeed but do nothing
-        cache.put(key.clone(), entry).await.unwrap();
+            // Operations should succeed but do nothing
+            cache.put(key.clone(), entry).await.unwrap();
 
-        let result = cache.get(&key).await;
-        assert!(result.is_none());
+            let result = cache.get(&key).await;
+            assert!(result.is_none());
 
-        assert!(!cache.contains_key(&key).await);
+            assert!(!cache.contains_key(&key).await);
 
-        let stats = cache.stats().await;
-        assert_eq!(stats.entry_count, 0);
-        }).await.expect("test_cache_disabled timed out");
+            let stats = cache.stats().await;
+            assert_eq!(stats.entry_count, 0);
+        })
+        .await
+        .expect("test_cache_disabled timed out");
     }
 
     #[tokio::test]
     async fn test_cache_metrics() {
         let _ = tokio::time::timeout(Duration::from_secs(5), async {
-        let config = create_test_config();
-        let cache = InMemoryCache::new(config);
+            let config = create_test_config();
+            let cache = InMemoryCache::new(config);
 
-        let entry = create_test_entry("test data", 60);
+            let entry = create_test_entry("test data", 60);
 
-        // Perform various operations
-        cache.put("key1".to_string(), entry.clone()).await.unwrap();
-        cache.put("key2".to_string(), entry).await.unwrap();
+            // Perform various operations
+            cache.put("key1".to_string(), entry.clone()).await.unwrap();
+            cache.put("key2".to_string(), entry).await.unwrap();
 
-        cache.get("key1").await; // hit
-        cache.get("key2").await; // hit
-        cache.get("key3").await; // miss
+            cache.get("key1").await; // hit
+            cache.get("key2").await; // hit
+            cache.get("key3").await; // miss
 
-        let metrics = cache.get_metrics().await;
-        assert_eq!(metrics.hits, 2);
-        assert_eq!(metrics.misses, 1);
-        assert_eq!(metrics.stores, 2);
-        assert_eq!(metrics.entry_count, 2);
-        assert!(metrics.current_size > 0);
+            let metrics = cache.get_metrics().await;
+            assert_eq!(metrics.hits, 2);
+            assert_eq!(metrics.misses, 1);
+            assert_eq!(metrics.stores, 2);
+            assert_eq!(metrics.entry_count, 2);
+            assert!(metrics.current_size > 0);
 
-        let hit_ratio = metrics.hit_ratio();
-        assert!((hit_ratio - 66.67).abs() < 0.1); // Approximately 66.67%
-        }).await.expect("test_cache_metrics timed out");
+            let hit_ratio = metrics.hit_ratio();
+            assert!((hit_ratio - 66.67).abs() < 0.1); // Approximately 66.67%
+        })
+        .await
+        .expect("test_cache_metrics timed out");
     }
 
     #[tokio::test]
     async fn test_cache_stats() {
         let _ = tokio::time::timeout(Duration::from_secs(5), async {
-        let config = create_test_config();
-        let cache = InMemoryCache::new(config);
+            let config = create_test_config();
+            let cache = InMemoryCache::new(config);
 
-        let entry = create_test_entry("test data", 60);
-        cache.put("key1".to_string(), entry).await.unwrap();
+            let entry = create_test_entry("test data", 60);
+            cache.put("key1".to_string(), entry).await.unwrap();
 
-        let stats = cache.stats().await;
-        assert_eq!(stats.entry_count, 1);
-        assert!(stats.total_size > 0);
-        assert_eq!(stats.max_size, 1024);
+            let stats = cache.stats().await;
+            assert_eq!(stats.entry_count, 1);
+            assert!(stats.total_size > 0);
+            assert_eq!(stats.max_size, 1024);
 
-        let utilization = stats.utilization_percent();
-        assert!(utilization > 0.0 && utilization <= 100.0);
+            let utilization = stats.utilization_percent();
+            assert!(utilization > 0.0 && utilization <= 100.0);
 
-        let avg_size = stats.average_entry_size();
-        assert!(avg_size > 0.0);
-        }).await.expect("test_cache_stats timed out");
+            let avg_size = stats.average_entry_size();
+            assert!(avg_size > 0.0);
+        })
+        .await
+        .expect("test_cache_stats timed out");
     }
 }

@@ -386,66 +386,72 @@ mod tests {
             assert!(result.is_ok());
             assert_eq!(result.unwrap(), 42);
             assert_eq!(counter.load(Ordering::SeqCst), 1);
-        }).await.expect("test_retry_success_on_first_attempt timed out");
+        })
+        .await
+        .expect("test_retry_success_on_first_attempt timed out");
     }
 
     #[tokio::test]
     async fn test_retry_success_after_failures() {
         let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
-        let config = RetryConfig {
-            max_attempts: 3,
-            base_delay: Duration::from_millis(1), // Fast test
-            ..Default::default()
-        };
+            let config = RetryConfig {
+                max_attempts: 3,
+                base_delay: Duration::from_millis(1), // Fast test
+                ..Default::default()
+            };
 
-        let executor = RetryExecutor::new(config);
-        let counter = Arc::new(AtomicUsize::new(0));
+            let executor = RetryExecutor::new(config);
+            let counter = Arc::new(AtomicUsize::new(0));
 
-        let result = executor
-            .execute(|_ctx| {
-                let counter = Arc::clone(&counter);
-                async move {
-                    let count = counter.fetch_add(1, Ordering::SeqCst) + 1;
-                    if count < 3 {
-                        RetryResult::Retry(DispaError::network("temporary failure"))
-                    } else {
-                        RetryResult::Success(42)
+            let result = executor
+                .execute(|_ctx| {
+                    let counter = Arc::clone(&counter);
+                    async move {
+                        let count = counter.fetch_add(1, Ordering::SeqCst) + 1;
+                        if count < 3 {
+                            RetryResult::Retry(DispaError::network("temporary failure"))
+                        } else {
+                            RetryResult::Success(42)
+                        }
                     }
-                }
-            })
-            .await;
+                })
+                .await;
 
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 42);
-        assert_eq!(counter.load(Ordering::SeqCst), 3);
-        }).await.expect("test_retry_success_after_failures timed out");
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap(), 42);
+            assert_eq!(counter.load(Ordering::SeqCst), 3);
+        })
+        .await
+        .expect("test_retry_success_after_failures timed out");
     }
 
     #[tokio::test]
     async fn test_retry_max_attempts_exceeded() {
         let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
-        let config = RetryConfig {
-            max_attempts: 2,
-            base_delay: Duration::from_millis(1), // Fast test
-            ..Default::default()
-        };
+            let config = RetryConfig {
+                max_attempts: 2,
+                base_delay: Duration::from_millis(1), // Fast test
+                ..Default::default()
+            };
 
-        let executor = RetryExecutor::new(config);
-        let counter = Arc::new(AtomicUsize::new(0));
+            let executor = RetryExecutor::new(config);
+            let counter = Arc::new(AtomicUsize::new(0));
 
-        let result = executor
-            .execute(|_ctx| {
-                let counter = Arc::clone(&counter);
-                async move {
-                    counter.fetch_add(1, Ordering::SeqCst);
-                    RetryResult::<i32>::Retry(DispaError::network("always failing"))
-                }
-            })
-            .await;
+            let result = executor
+                .execute(|_ctx| {
+                    let counter = Arc::clone(&counter);
+                    async move {
+                        counter.fetch_add(1, Ordering::SeqCst);
+                        RetryResult::<i32>::Retry(DispaError::network("always failing"))
+                    }
+                })
+                .await;
 
-        assert!(result.is_err());
-        assert_eq!(counter.load(Ordering::SeqCst), 2);
-        }).await.expect("test_retry_max_attempts_exceeded timed out");
+            assert!(result.is_err());
+            assert_eq!(counter.load(Ordering::SeqCst), 2);
+        })
+        .await
+        .expect("test_retry_max_attempts_exceeded timed out");
     }
 
     #[tokio::test]
@@ -464,64 +470,72 @@ mod tests {
                 .await;
             assert!(result.is_err());
             assert_eq!(counter.load(Ordering::SeqCst), 1);
-        }).await.expect("test_retry_abort_on_non_retryable_error timed out");
+        })
+        .await
+        .expect("test_retry_abort_on_non_retryable_error timed out");
     }
 
     #[tokio::test]
     async fn test_exponential_backoff() {
         let _ = tokio::time::timeout(std::time::Duration::from_secs(3), async {
-        let config = RetryConfig {
-            base_delay: Duration::from_millis(100),
-            backoff: BackoffStrategy::Exponential { multiplier: 2.0 },
-            jitter: false, // Disable jitter for predictable testing
-            ..Default::default()
-        };
+            let config = RetryConfig {
+                base_delay: Duration::from_millis(100),
+                backoff: BackoffStrategy::Exponential { multiplier: 2.0 },
+                jitter: false, // Disable jitter for predictable testing
+                ..Default::default()
+            };
 
-        let executor = RetryExecutor::new(config);
+            let executor = RetryExecutor::new(config);
 
-        // Test delay calculation
-        assert_eq!(executor.calculate_delay(1), Duration::from_millis(100));
-        assert_eq!(executor.calculate_delay(2), Duration::from_millis(200));
-        assert_eq!(executor.calculate_delay(3), Duration::from_millis(400));
-        }).await.expect("test_exponential_backoff timed out");
+            // Test delay calculation
+            assert_eq!(executor.calculate_delay(1), Duration::from_millis(100));
+            assert_eq!(executor.calculate_delay(2), Duration::from_millis(200));
+            assert_eq!(executor.calculate_delay(3), Duration::from_millis(400));
+        })
+        .await
+        .expect("test_exponential_backoff timed out");
     }
 
     #[tokio::test]
     async fn test_linear_backoff() {
         let _ = tokio::time::timeout(std::time::Duration::from_secs(3), async {
-        let config = RetryConfig {
-            base_delay: Duration::from_millis(100),
-            backoff: BackoffStrategy::Linear,
-            jitter: false, // Disable jitter for predictable testing
-            ..Default::default()
-        };
+            let config = RetryConfig {
+                base_delay: Duration::from_millis(100),
+                backoff: BackoffStrategy::Linear,
+                jitter: false, // Disable jitter for predictable testing
+                ..Default::default()
+            };
 
-        let executor = RetryExecutor::new(config);
+            let executor = RetryExecutor::new(config);
 
-        // Test delay calculation
-        assert_eq!(executor.calculate_delay(1), Duration::from_millis(100));
-        assert_eq!(executor.calculate_delay(2), Duration::from_millis(200));
-        assert_eq!(executor.calculate_delay(3), Duration::from_millis(300));
-        }).await.expect("test_linear_backoff timed out");
+            // Test delay calculation
+            assert_eq!(executor.calculate_delay(1), Duration::from_millis(100));
+            assert_eq!(executor.calculate_delay(2), Duration::from_millis(200));
+            assert_eq!(executor.calculate_delay(3), Duration::from_millis(300));
+        })
+        .await
+        .expect("test_linear_backoff timed out");
     }
 
     #[tokio::test]
     async fn test_fixed_backoff() {
         let _ = tokio::time::timeout(std::time::Duration::from_secs(3), async {
-        let config = RetryConfig {
-            base_delay: Duration::from_millis(100),
-            backoff: BackoffStrategy::Fixed,
-            jitter: false, // Disable jitter for predictable testing
-            ..Default::default()
-        };
+            let config = RetryConfig {
+                base_delay: Duration::from_millis(100),
+                backoff: BackoffStrategy::Fixed,
+                jitter: false, // Disable jitter for predictable testing
+                ..Default::default()
+            };
 
-        let executor = RetryExecutor::new(config);
+            let executor = RetryExecutor::new(config);
 
-        // Test delay calculation
-        assert_eq!(executor.calculate_delay(1), Duration::from_millis(100));
-        assert_eq!(executor.calculate_delay(2), Duration::from_millis(100));
-        assert_eq!(executor.calculate_delay(3), Duration::from_millis(100));
-        }).await.expect("test_fixed_backoff timed out");
+            // Test delay calculation
+            assert_eq!(executor.calculate_delay(1), Duration::from_millis(100));
+            assert_eq!(executor.calculate_delay(2), Duration::from_millis(100));
+            assert_eq!(executor.calculate_delay(3), Duration::from_millis(100));
+        })
+        .await
+        .expect("test_fixed_backoff timed out");
     }
 
     #[tokio::test]
@@ -532,48 +546,57 @@ mod tests {
                 let counter = Arc::clone(&counter);
                 async move {
                     let count = counter.fetch_add(1, Ordering::SeqCst) + 1;
-                    if count < 2 { Err(DispaError::network("temporary failure")) } else { Ok(42) }
+                    if count < 2 {
+                        Err(DispaError::network("temporary failure"))
+                    } else {
+                        Ok(42)
+                    }
                 }
-            }).await;
+            })
+            .await;
             assert!(result.is_ok());
             assert_eq!(result.unwrap(), 42);
             assert_eq!(counter.load(Ordering::SeqCst), 2);
-        }).await.expect("test_error_recovery_with_retry timed out");
+        })
+        .await
+        .expect("test_error_recovery_with_retry timed out");
     }
 
     #[tokio::test]
     async fn test_exponential_backoff_helper() {
         let _ = tokio::time::timeout(std::time::Duration::from_secs(3), async {
-        let config = RetryConfig {
-            max_attempts: 3,
-            base_delay: Duration::from_millis(100),
-            ..Default::default()
-        };
+            let config = RetryConfig {
+                max_attempts: 3,
+                base_delay: Duration::from_millis(100),
+                ..Default::default()
+            };
 
-        let mut backoff = ExponentialBackoff::new(config);
+            let mut backoff = ExponentialBackoff::new(config);
 
-        assert_eq!(backoff.current_attempt(), 0);
+            assert_eq!(backoff.current_attempt(), 0);
 
-        let delay1 = backoff.next_delay();
-        assert!(delay1.is_some());
-        assert_eq!(backoff.current_attempt(), 1);
+            let delay1 = backoff.next_delay();
+            assert!(delay1.is_some());
+            assert_eq!(backoff.current_attempt(), 1);
 
-        let delay2 = backoff.next_delay();
-        assert!(delay2.is_some());
-        assert_eq!(backoff.current_attempt(), 2);
+            let delay2 = backoff.next_delay();
+            assert!(delay2.is_some());
+            assert_eq!(backoff.current_attempt(), 2);
 
-        let delay3 = backoff.next_delay();
-        assert!(delay3.is_some());
-        assert_eq!(backoff.current_attempt(), 3);
+            let delay3 = backoff.next_delay();
+            assert!(delay3.is_some());
+            assert_eq!(backoff.current_attempt(), 3);
 
-        let delay4 = backoff.next_delay();
-        assert!(delay4.is_none());
-        assert_eq!(backoff.current_attempt(), 4);
+            let delay4 = backoff.next_delay();
+            assert!(delay4.is_none());
+            assert_eq!(backoff.current_attempt(), 4);
 
-        // Test reset
-        backoff.reset();
-        assert_eq!(backoff.current_attempt(), 0);
-        }).await.expect("test_exponential_backoff_helper timed out");
+            // Test reset
+            backoff.reset();
+            assert_eq!(backoff.current_attempt(), 0);
+        })
+        .await
+        .expect("test_exponential_backoff_helper timed out");
     }
 
     #[tokio::test]
@@ -592,7 +615,11 @@ mod tests {
                 .await;
             let contexts = contexts.lock().unwrap();
             assert!(!contexts.is_empty());
-            for (i, ctx) in contexts.iter().enumerate() { assert_eq!(ctx.attempt, (i + 1) as u32); }
-        }).await.expect("test_retry_context timed out");
+            for (i, ctx) in contexts.iter().enumerate() {
+                assert_eq!(ctx.attempt, (i + 1) as u32);
+            }
+        })
+        .await
+        .expect("test_retry_context timed out");
     }
 }

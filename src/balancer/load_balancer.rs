@@ -41,6 +41,7 @@ pub struct LoadBalancer {
 #[derive(Debug, Clone)]
 struct WeightedRoundRobinState {
     current_weights: Vec<i32>,
+    #[allow(dead_code)]
     total_weight: i32,
 }
 
@@ -52,13 +53,13 @@ impl LoadBalancer {
         let total_weight: i32 = config
             .targets
             .iter()
-            .map(|t| t.weight.unwrap_or(1) as i32)
+            .map(|t| t.weight.unwrap_or(1.0) as i32)
             .sum();
 
         let current_weights = config
             .targets
             .iter()
-            .map(|t| t.weight.unwrap_or(1) as i32)
+            .map(|t| t.weight.unwrap_or(1.0) as i32)
             .collect();
 
         let weighted_state = WeightedRoundRobinState {
@@ -101,13 +102,13 @@ impl LoadBalancer {
         let total_weight: i32 = config
             .targets
             .iter()
-            .map(|t| t.weight.unwrap_or(1) as i32)
+            .map(|t| t.weight.unwrap_or(1.0) as i32)
             .sum();
 
         let current_weights = config
             .targets
             .iter()
-            .map(|t| t.weight.unwrap_or(1) as i32)
+            .map(|t| t.weight.unwrap_or(1.0) as i32)
             .collect();
 
         let weighted_state = WeightedRoundRobinState {
@@ -138,6 +139,9 @@ impl LoadBalancer {
 
         let selected = match self.config.load_balancing.lb_type {
             LoadBalancingType::RoundRobin => self.round_robin_select(&healthy_targets).await,
+            LoadBalancingType::WeightedRoundRobin => {
+                self.weighted_round_robin_select(&healthy_targets).await
+            }
             LoadBalancingType::Weighted => self.weighted_round_robin_select(&healthy_targets).await,
             LoadBalancingType::Random => self.random_select(&healthy_targets).await,
             LoadBalancingType::LeastConnections => {
@@ -196,7 +200,7 @@ impl LoadBalancer {
         // Calculate total weight for proper normalization
         let total_weight: i32 = healthy_targets
             .iter()
-            .map(|target| target.weight.unwrap_or(1) as i32)
+            .map(|target| target.weight.unwrap_or(1.0) as i32)
             .sum();
 
         // Find target index mapping
@@ -216,7 +220,7 @@ impl LoadBalancer {
                 continue; // Skip invalid indices
             }
 
-            let weight = healthy_targets[i].weight.unwrap_or(1) as i32;
+            let weight = healthy_targets[i].weight.unwrap_or(1.0) as i32;
             state.current_weights[original_index] += weight;
 
             if state.current_weights[original_index] > max_weight {
@@ -429,6 +433,7 @@ impl LoadBalancer {
 
     /// Clean up expired connection statistics and unused target data
     /// Should be called periodically to prevent memory leaks
+    #[allow(dead_code)]
     pub async fn cleanup_expired_data(&self) {
         let now = Instant::now();
         let retention_duration = Duration::from_secs(3600); // 1 hour
@@ -469,25 +474,32 @@ impl LoadBalancer {
             }
 
             // Recalculate total weight for active targets
-            state.total_weight = self.targets
+            state.total_weight = self
+                .targets
                 .iter()
-                .map(|target| target.weight.unwrap_or(1) as i32)
+                .map(|target| target.weight.unwrap_or(1.0) as i32)
                 .sum();
         }
 
         // Trigger health checker cleanup
-        self.health_checker.cleanup_expired_data(&current_target_names).await;
+        self.health_checker
+            .cleanup_expired_data(&current_target_names)
+            .await;
 
         debug!("LoadBalancer data cleanup completed");
     }
 
     /// Update target configuration and clean up orphaned data
+    #[allow(dead_code)]
     pub async fn update_targets(&self, new_targets: Vec<Target>) {
         // This method would be called when configuration is reloaded
         // For now, we'll just note that it should update self.targets
         // and call cleanup_expired_data()
 
-        debug!("Target configuration update requested with {} targets", new_targets.len());
+        debug!(
+            "Target configuration update requested with {} targets",
+            new_targets.len()
+        );
         // In a full implementation, this would:
         // 1. Update self.targets (requires making it mutable or using RwLock)
         // 2. Call cleanup_expired_data()
@@ -529,10 +541,11 @@ mod tests {
     use super::*;
     use crate::config::{HealthCheckConfig, LoadBalancingConfig};
 
-    fn create_test_target(name: &str, weight: Option<u32>) -> Target {
+    fn create_test_target(name: &str, weight: Option<f64>) -> Target {
         Target {
             name: name.to_string(),
             url: format!("http://test-{}.com", name),
+            address: format!("test-{}.com:80", name),
             weight,
             timeout: Some(30),
         }
@@ -542,8 +555,9 @@ mod tests {
         TargetConfig {
             targets,
             load_balancing: LoadBalancingConfig {
+                algorithm: lb_type.clone(),
                 lb_type,
-                sticky_sessions: false,
+                sticky_sessions: Some(false),
             },
             health_check: HealthCheckConfig {
                 enabled: false, // Disable for tests
@@ -551,6 +565,7 @@ mod tests {
                 timeout: 10,
                 healthy_threshold: 2,
                 unhealthy_threshold: 3,
+                threshold: 2,
             },
         }
     }
@@ -583,9 +598,9 @@ mod tests {
     #[tokio::test]
     async fn test_weighted_round_robin_selection() {
         let targets = vec![
-            create_test_target("server1", Some(3)), // Weight 3
-            create_test_target("server2", Some(1)), // Weight 1
-            create_test_target("server3", Some(2)), // Weight 2
+            create_test_target("server1", Some(3.0)), // Weight 3
+            create_test_target("server2", Some(1.0)), // Weight 1
+            create_test_target("server3", Some(2.0)), // Weight 2
         ];
         let config = create_test_config(targets.clone(), LoadBalancingType::Weighted);
         let lb = LoadBalancer::new_for_test(config);
@@ -698,7 +713,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_single_target() {
-        let targets = vec![create_test_target("server1", Some(5))];
+        let targets = vec![create_test_target("server1", Some(5.0))];
         let config = create_test_config(targets.clone(), LoadBalancingType::Weighted);
         let lb = LoadBalancer::new_for_test(config);
 
@@ -800,8 +815,8 @@ mod tests {
     #[tokio::test]
     async fn test_zero_weight_handling() {
         let targets = vec![
-            create_test_target("server1", Some(0)), // Zero weight
-            create_test_target("server2", Some(2)),
+            create_test_target("server1", Some(0.0)), // Zero weight
+            create_test_target("server2", Some(2.0)),
         ];
         let config = create_test_config(targets.clone(), LoadBalancingType::Weighted);
         let lb = LoadBalancer::new_for_test(config);
@@ -816,46 +831,48 @@ mod tests {
     #[tokio::test]
     async fn test_concurrent_access() {
         let _ = tokio::time::timeout(std::time::Duration::from_secs(10), async {
-        let targets = vec![
-            create_test_target("server1", None),
-            create_test_target("server2", None),
-        ];
-        let config = create_test_config(targets.clone(), LoadBalancingType::RoundRobin);
-        let lb = Arc::new(LoadBalancer::new_for_test(config));
+            let targets = vec![
+                create_test_target("server1", None),
+                create_test_target("server2", None),
+            ];
+            let config = create_test_config(targets.clone(), LoadBalancingType::RoundRobin);
+            let lb = Arc::new(LoadBalancer::new_for_test(config));
 
-        // Spawn multiple tasks to test concurrent access
-        let mut handles = vec![];
-        for _ in 0..10 {
-            let lb_clone = Arc::clone(&lb);
-            let targets_clone = targets.clone();
-            let handle = tokio::spawn(async move {
-                for _ in 0..100 {
-                    let _ = lb_clone.round_robin_select(&targets_clone).await;
-                    lb_clone.increment_connection_count("server1").await;
-                }
-            });
-            handles.push(handle);
-        }
+            // Spawn multiple tasks to test concurrent access
+            let mut handles = vec![];
+            for _ in 0..10 {
+                let lb_clone = Arc::clone(&lb);
+                let targets_clone = targets.clone();
+                let handle = tokio::spawn(async move {
+                    for _ in 0..100 {
+                        let _ = lb_clone.round_robin_select(&targets_clone).await;
+                        lb_clone.increment_connection_count("server1").await;
+                    }
+                });
+                handles.push(handle);
+            }
 
-        // Wait for all tasks to complete
-        for handle in handles {
-            handle.await.unwrap();
-        }
+            // Wait for all tasks to complete
+            for handle in handles {
+                handle.await.unwrap();
+            }
 
-        // Verify the final state
-        let stats = lb.get_connection_stats().await;
-        let server1_stats = stats.get("server1").unwrap();
-        assert_eq!(server1_stats.total_requests, 1000);
-        assert_eq!(server1_stats.active_connections, 1000);
-        }).await.expect("test_concurrent_access timed out");
+            // Verify the final state
+            let stats = lb.get_connection_stats().await;
+            let server1_stats = stats.get("server1").unwrap();
+            assert_eq!(server1_stats.total_requests, 1000);
+            assert_eq!(server1_stats.active_connections, 1000);
+        })
+        .await
+        .expect("test_concurrent_access timed out");
     }
 
     #[tokio::test]
     async fn test_weighted_round_robin_detailed_algorithm() {
         let targets = vec![
-            create_test_target("server1", Some(1)), // Weight 1
-            create_test_target("server2", Some(3)), // Weight 3
-            create_test_target("server3", Some(2)), // Weight 2
+            create_test_target("server1", Some(1.0)), // Weight 1
+            create_test_target("server2", Some(3.0)), // Weight 3
+            create_test_target("server3", Some(2.0)), // Weight 2
         ];
         let config = create_test_config(targets.clone(), LoadBalancingType::Weighted);
         let lb = LoadBalancer::new_for_test(config);
@@ -1057,22 +1074,22 @@ mod tests {
             // Weighted with mixed weights
             create_test_config(
                 vec![
-                    create_test_target("w1", Some(1)),
-                    create_test_target("w2", Some(5)),
+                    create_test_target("w1", Some(1.0)),
+                    create_test_target("w2", Some(5.0)),
                     create_test_target("w3", None), // Default weight
                 ],
                 LoadBalancingType::Weighted,
             ),
             // Random with single target
             create_test_config(
-                vec![create_test_target("random1", Some(3))],
+                vec![create_test_target("random1", Some(3.0))],
                 LoadBalancingType::Random,
             ),
             // Least connections with zero weights
             create_test_config(
                 vec![
-                    create_test_target("lc1", Some(0)),
-                    create_test_target("lc2", Some(0)),
+                    create_test_target("lc1", Some(0.0)),
+                    create_test_target("lc2", Some(0.0)),
                 ],
                 LoadBalancingType::LeastConnections,
             ),
@@ -1093,64 +1110,66 @@ mod tests {
     #[tokio::test]
     async fn test_concurrent_mixed_operations() {
         let _ = tokio::time::timeout(std::time::Duration::from_secs(15), async {
-        let targets = vec![
-            create_test_target("server1", Some(2)),
-            create_test_target("server2", Some(3)),
-        ];
-        let config = create_test_config(targets.clone(), LoadBalancingType::Weighted);
-        let lb = Arc::new(LoadBalancer::new_for_test(config));
+            let targets = vec![
+                create_test_target("server1", Some(2.0)),
+                create_test_target("server2", Some(3.0)),
+            ];
+            let config = create_test_config(targets.clone(), LoadBalancingType::Weighted);
+            let lb = Arc::new(LoadBalancer::new_for_test(config));
 
-        let mut handles = Vec::new();
+            let mut handles = Vec::new();
 
-        // Concurrent selections
-        for _ in 0..10 {
-            let lb_clone = Arc::clone(&lb);
-            let handle = tokio::spawn(async move {
-                for _ in 0..10 {
-                    let _ = lb_clone.get_target().await;
-                }
-            });
-            handles.push(handle);
-        }
+            // Concurrent selections
+            for _ in 0..10 {
+                let lb_clone = Arc::clone(&lb);
+                let handle = tokio::spawn(async move {
+                    for _ in 0..10 {
+                        let _ = lb_clone.get_target().await;
+                    }
+                });
+                handles.push(handle);
+            }
 
-        // Concurrent connection increments
-        for _ in 0..10 {
-            let lb_clone = Arc::clone(&lb);
-            let handle = tokio::spawn(async move {
-                for _ in 0..10 {
-                    lb_clone.increment_connection_count("server1").await;
-                    lb_clone.increment_connection_count("server2").await;
-                }
-            });
-            handles.push(handle);
-        }
+            // Concurrent connection increments
+            for _ in 0..10 {
+                let lb_clone = Arc::clone(&lb);
+                let handle = tokio::spawn(async move {
+                    for _ in 0..10 {
+                        lb_clone.increment_connection_count("server1").await;
+                        lb_clone.increment_connection_count("server2").await;
+                    }
+                });
+                handles.push(handle);
+            }
 
-        // Concurrent request result recordings
-        for _ in 0..10 {
-            let lb_clone = Arc::clone(&lb);
-            let handle = tokio::spawn(async move {
-                for _ in 0..10 {
-                    lb_clone
-                        .record_request_result("server1", true, Duration::from_millis(100))
-                        .await;
-                    lb_clone
-                        .record_request_result("server2", false, Duration::from_millis(200))
-                        .await;
-                }
-            });
-            handles.push(handle);
-        }
+            // Concurrent request result recordings
+            for _ in 0..10 {
+                let lb_clone = Arc::clone(&lb);
+                let handle = tokio::spawn(async move {
+                    for _ in 0..10 {
+                        lb_clone
+                            .record_request_result("server1", true, Duration::from_millis(100))
+                            .await;
+                        lb_clone
+                            .record_request_result("server2", false, Duration::from_millis(200))
+                            .await;
+                    }
+                });
+                handles.push(handle);
+            }
 
-        // Wait for all operations to complete
-        for handle in handles {
-            handle.await.unwrap();
-        }
+            // Wait for all operations to complete
+            for handle in handles {
+                handle.await.unwrap();
+            }
 
-        // Verify final state is consistent
-        let summary = lb.get_summary().await;
-        assert_eq!(summary.total_targets, 2);
-        assert!(summary.total_requests > 0);
-        assert!(summary.total_active_connections > 0);
-        }).await.expect("test_concurrent_mixed_operations timed out");
+            // Verify final state is consistent
+            let summary = lb.get_summary().await;
+            assert_eq!(summary.total_targets, 2);
+            assert!(summary.total_requests > 0);
+            assert!(summary.total_active_connections > 0);
+        })
+        .await
+        .expect("test_concurrent_mixed_operations timed out");
     }
 }

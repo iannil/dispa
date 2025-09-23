@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use anyhow::Result;
 use hyper::{Body, HeaderMap, Response, StatusCode};
 use std::time::{Duration, SystemTime};
@@ -6,12 +7,12 @@ pub mod etag;
 pub mod policy;
 pub mod storage;
 
-pub use etag::{ConditionalResult, ETagManager};
-pub use policy::{CacheDecision, PolicyEngine};
-pub use storage::{CacheStats, CacheMetrics, InMemoryCache};
+pub use etag::ETagManager;
+pub use policy::PolicyEngine;
+pub use storage::{CacheMetrics, InMemoryCache};
 
 // Re-export config types for convenience
-pub use crate::config::{CacheConfig, CachePolicy, CachePolicyPattern};
+pub use crate::config::{CacheConfig, CachePolicy};
 
 /// Cached response entry
 #[derive(Debug, Clone)]
@@ -102,6 +103,7 @@ impl CacheEntry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::cache::CachePolicyPattern;
     use hyper::header::{CONTENT_TYPE, ETAG};
 
     #[test]

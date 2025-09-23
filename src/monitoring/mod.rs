@@ -1,15 +1,20 @@
-pub mod health;
-pub mod metrics;
 pub mod admin;
+pub mod collector;
+pub mod data;
+pub mod handlers;
+pub mod health;
+pub mod server;
 
 use anyhow::Result;
 use tokio::task::JoinHandle;
 
 use crate::config::MonitoringConfig;
 
+pub use server::run_metrics_server;
+
 pub async fn start_metrics_server(config: MonitoringConfig) -> Result<JoinHandle<()>> {
     let handle = tokio::spawn(async move {
-        if let Err(e) = metrics::run_metrics_server(config).await {
+        if let Err(e) = run_metrics_server(config).await {
             tracing::error!("Metrics server error: {}", e);
         }
     });
@@ -27,11 +32,16 @@ mod tests {
     async fn test_start_metrics_server_disabled() {
         let _ = tokio::time::timeout(std::time::Duration::from_secs(10), async {
             let config = MonitoringConfig {
-            enabled: false,
-            metrics_port: 9090,
-            health_check_port: 8081,
-            histogram_buckets: None,
-            capacity: Default::default(),
+                enabled: false,
+                bind: "127.0.0.1:0".parse().unwrap(),
+                health_endpoint: "/health".to_string(),
+                metrics_endpoint: "/metrics".to_string(),
+                prometheus_enabled: true,
+                histogram_buckets: None,
+                capacity: None,
+                pushgateway: None,
+                metrics_port: 9090,
+                health_check_port: 8081,
             };
 
             let result = start_metrics_server(config).await;
@@ -39,22 +49,32 @@ mod tests {
             let handle = result.unwrap();
             sleep(Duration::from_millis(10)).await;
             let _ = handle.abort();
-        }).await.expect("test_start_metrics_server_disabled timed out");
+        })
+        .await
+        .expect("test_start_metrics_server_disabled timed out");
     }
 
     #[tokio::test]
     async fn test_start_metrics_server_enabled() {
         let _ = tokio::time::timeout(std::time::Duration::from_secs(10), async {
             let config = MonitoringConfig {
-            enabled: true,
-            metrics_port: 0, // Use port 0 for auto-assignment to avoid conflicts
-            health_check_port: 0,
-            histogram_buckets: None,
-            capacity: Default::default(),
+                enabled: true,
+                bind: "127.0.0.1:0".parse().unwrap(),
+                health_endpoint: "/health".to_string(),
+                metrics_endpoint: "/metrics".to_string(),
+                prometheus_enabled: true,
+                histogram_buckets: None,
+                capacity: None,
+                pushgateway: None,
+                metrics_port: 0, // Use port 0 for auto-assignment to avoid conflicts
+                health_check_port: 0,
             };
 
             let result = start_metrics_server(config).await;
-            assert!(result.is_ok(), "Should successfully start metrics server task");
+            assert!(
+                result.is_ok(),
+                "Should successfully start metrics server task"
+            );
             let handle = result.unwrap();
             sleep(Duration::from_millis(100)).await;
             if handle.is_finished() {
@@ -62,7 +82,9 @@ mod tests {
             } else {
                 handle.abort();
             }
-        }).await.expect("test_start_metrics_server_enabled timed out");
+        })
+        .await
+        .expect("test_start_metrics_server_enabled timed out");
     }
 
     #[tokio::test]
@@ -70,24 +92,39 @@ mod tests {
         let configs = vec![
             MonitoringConfig {
                 enabled: true,
+                bind: "127.0.0.1:9091".parse().unwrap(),
+                health_endpoint: "/health".to_string(),
+                metrics_endpoint: "/metrics".to_string(),
+                prometheus_enabled: true,
+                histogram_buckets: None,
+                capacity: None,
+                pushgateway: None,
                 metrics_port: 9091,
                 health_check_port: 8082,
-                histogram_buckets: None,
-            capacity: Default::default(),
             },
             MonitoringConfig {
                 enabled: true,
+                bind: "127.0.0.1:9092".parse().unwrap(),
+                health_endpoint: "/health".to_string(),
+                metrics_endpoint: "/metrics".to_string(),
+                prometheus_enabled: true,
+                histogram_buckets: None,
+                capacity: None,
+                pushgateway: None,
                 metrics_port: 9092,
                 health_check_port: 8083,
-                histogram_buckets: None,
-            capacity: Default::default(),
             },
             MonitoringConfig {
                 enabled: false,
+                bind: "127.0.0.1:9093".parse().unwrap(),
+                health_endpoint: "/health".to_string(),
+                metrics_endpoint: "/metrics".to_string(),
+                prometheus_enabled: true,
+                histogram_buckets: None,
+                capacity: None,
+                pushgateway: None,
                 metrics_port: 9093,
                 health_check_port: 8084,
-                histogram_buckets: None,
-            capacity: Default::default(),
             },
         ];
 
@@ -96,12 +133,19 @@ mod tests {
         let _ = tokio::time::timeout(Duration::from_secs(10), async {
             for config in configs {
                 let result = start_metrics_server(config).await;
-                assert!(result.is_ok(), "Should start metrics server with custom ports");
+                assert!(
+                    result.is_ok(),
+                    "Should start metrics server with custom ports"
+                );
                 handles.push(result.unwrap());
             }
             sleep(Duration::from_millis(100)).await;
-            for handle in handles { handle.abort(); }
-        }).await.expect("test_start_metrics_server_with_different_ports timed out");
+            for handle in handles {
+                handle.abort();
+            }
+        })
+        .await
+        .expect("test_start_metrics_server_with_different_ports timed out");
     }
 
     #[tokio::test]
@@ -112,11 +156,16 @@ mod tests {
         let _ = tokio::time::timeout(Duration::from_secs(10), async {
             for i in 0..5 {
                 let config = MonitoringConfig {
-                enabled: true,
-                metrics_port: 0, // Auto-assign to avoid conflicts
-                health_check_port: 0,
-                histogram_buckets: None,
-            capacity: Default::default(),
+                    enabled: true,
+                    bind: "127.0.0.1:0".parse().unwrap(),
+                    health_endpoint: "/health".to_string(),
+                    metrics_endpoint: "/metrics".to_string(),
+                    prometheus_enabled: true,
+                    histogram_buckets: None,
+                    capacity: None,
+                    pushgateway: None,
+                    metrics_port: 0, // Auto-assign to avoid conflicts
+                    health_check_port: 0,
                 };
                 let result = start_metrics_server(config).await;
                 assert!(result.is_ok(), "Should start metrics server {}", i);
@@ -154,10 +203,15 @@ mod tests {
     async fn test_metrics_server_task_cleanup() {
         let config = MonitoringConfig {
             enabled: true,
+            bind: "127.0.0.1:0".parse().unwrap(),
+            health_endpoint: "/health".to_string(),
+            metrics_endpoint: "/metrics".to_string(),
+            prometheus_enabled: true,
+            histogram_buckets: None,
+            capacity: None,
+            pushgateway: None,
             metrics_port: 0,
             health_check_port: 0,
-            histogram_buckets: None,
-            capacity: Default::default(),
         };
 
         let _ = tokio::time::timeout(Duration::from_secs(10), async {
@@ -166,6 +220,8 @@ mod tests {
             handle.abort();
             sleep(Duration::from_millis(10)).await;
             assert!(handle.is_finished());
-        }).await.expect("test_metrics_server_task_cleanup timed out");
+        })
+        .await
+        .expect("test_metrics_server_task_cleanup timed out");
     }
 }

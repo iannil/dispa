@@ -3,16 +3,16 @@ use once_cell::sync::OnceCell;
 use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 use tokio::fs::OpenOptions;
 use tokio::io::AsyncWriteExt;
+use tokio::sync::RwLock;
 
 use crate::balancer::LoadBalancer;
+use crate::config::Config;
 use crate::config::DomainConfig;
 use crate::plugins::SharedPluginEngine;
 use crate::routing::RoutingEngine;
 use crate::security::SharedSecurity;
-use crate::config::Config;
 
 static ADMIN_STATE: OnceCell<AdminState> = OnceCell::new();
 static ADMIN_TOKEN: OnceCell<Option<String>> = OnceCell::new();
@@ -36,23 +36,31 @@ pub async fn handle_admin(req: Request<Body>) -> Result<Response<Body>, hyper::h
     match (req.method(), path) {
         (&Method::GET, "/admin") | (&Method::GET, "/admin/") => ok_html(index_html()),
         (&Method::GET, "/admin/status") => {
-            if !authorized(&req).await { return unauthorized(); }
+            if !authorized(&req).await {
+                return unauthorized();
+            }
             let role = role_of(&req).await;
             ok_json(status_json_with_role(role).await)
         }
         (&Method::GET, "/admin/config") => {
-            if !authorized(&req).await { return unauthorized(); }
+            if !authorized(&req).await {
+                return unauthorized();
+            }
             // editor/admin allowed
             config_get().await
         }
         (&Method::POST, "/admin/config") | (&Method::PUT, "/admin/config") => {
             // only admin allowed
             let role = role_of(&req).await.unwrap_or_default();
-            if role != "admin" { return unauthorized(); }
+            if role != "admin" {
+                return unauthorized();
+            }
             config_set(req).await
         }
         (&Method::GET, "/admin/config/json") => {
-            if !authorized(&req).await { return unauthorized(); }
+            if !authorized(&req).await {
+                return unauthorized();
+            }
             config_get_json().await
         }
         (&Method::POST, "/admin/config/json") | (&Method::PUT, "/admin/config/json") => {
@@ -60,23 +68,37 @@ pub async fn handle_admin(req: Request<Body>) -> Result<Response<Body>, hyper::h
             let role = role_of(&req).await.unwrap_or_default();
             if role == "admin" || role == "editor" {
                 config_set_json(req).await
-            } else { unauthorized() }
+            } else {
+                unauthorized()
+            }
         }
-        _ => Response::builder().status(StatusCode::NOT_FOUND).body(Body::from("Not Found")),
+        _ => Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Body::from("Not Found")),
     }
 }
 
 fn ok_html(body: String) -> Result<Response<Body>, hyper::http::Error> {
-    Response::builder().status(StatusCode::OK).header("content-type","text/html; charset=utf-8").body(Body::from(body))
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "text/html; charset=utf-8")
+        .body(Body::from(body))
 }
 
 fn ok_json<T: Serialize>(val: T) -> Result<Response<Body>, hyper::http::Error> {
     let body = serde_json::to_string(&val).unwrap_or_else(|_| "{}".to_string());
-    Response::builder().status(StatusCode::OK).header("content-type", "application/json").body(Body::from(body))
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(body))
 }
 
 fn unauthorized<T>() -> Result<Response<Body>, T> {
-    Ok(Response::builder().status(StatusCode::UNAUTHORIZED).header("WWW-Authenticate","Bearer, Basic, X-Admin-Token").body(Body::from("Unauthorized")).unwrap())
+    Ok(Response::builder()
+        .status(StatusCode::UNAUTHORIZED)
+        .header("WWW-Authenticate", "Bearer, Basic, X-Admin-Token")
+        .body(Body::from("Unauthorized"))
+        .unwrap())
 }
 
 async fn config_get() -> Result<Response<Body>, hyper::http::Error> {
@@ -85,12 +107,19 @@ async fn config_get() -> Result<Response<Body>, hyper::http::Error> {
             Ok(mut content) => {
                 // naive redaction: mask `secret = "..."` in jwt section
                 content = redact_secrets(&content);
-                Response::builder().status(StatusCode::OK).header("content-type","text/plain; charset=utf-8").body(Body::from(content))
+                Response::builder()
+                    .status(StatusCode::OK)
+                    .header("content-type", "text/plain; charset=utf-8")
+                    .body(Body::from(content))
             }
-            Err(_) => Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).body(Body::from("Failed to read config")),
+            Err(_) => Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::from("Failed to read config")),
         }
     } else {
-        Response::builder().status(StatusCode::SERVICE_UNAVAILABLE).body(Body::from("Admin state not initialized"))
+        Response::builder()
+            .status(StatusCode::SERVICE_UNAVAILABLE)
+            .body(Body::from("Admin state not initialized"))
     }
 }
 
@@ -99,14 +128,26 @@ async fn config_set(mut req: Request<Body>) -> Result<Response<Body>, hyper::htt
     if let Some(state) = ADMIN_STATE.get() {
         let bytes = to_bytes(req.body_mut()).await.unwrap_or_default();
         if bytes.is_empty() {
-            return Response::builder().status(StatusCode::BAD_REQUEST).body(Body::from("Empty body"));
+            return Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body(Body::from("Empty body"));
         }
         // Best-effort: Write to config file path; file watcher will reload
         let ok = tokio::fs::write(&state.config_path, &bytes).await.is_ok();
         audit(&req, ok, bytes.len(), "/admin/config").await;
-        if ok { Response::builder().status(StatusCode::OK).body(Body::from("OK")) } else { Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).body(Body::from("Failed to write config")) }
+        if ok {
+            Response::builder()
+                .status(StatusCode::OK)
+                .body(Body::from("OK"))
+        } else {
+            Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::from("Failed to write config"))
+        }
     } else {
-        Response::builder().status(StatusCode::SERVICE_UNAVAILABLE).body(Body::from("Admin state not initialized"))
+        Response::builder()
+            .status(StatusCode::SERVICE_UNAVAILABLE)
+            .body(Body::from("Admin state not initialized"))
     }
 }
 
@@ -122,12 +163,18 @@ async fn config_get_json() -> Result<Response<Body>, hyper::http::Error> {
                     });
                     return ok_json(obj);
                 }
-                Response::builder().status(StatusCode::BAD_REQUEST).body(Body::from("Invalid config"))
+                Response::builder()
+                    .status(StatusCode::BAD_REQUEST)
+                    .body(Body::from("Invalid config"))
             }
-            Err(_) => Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).body(Body::from("Failed to read config")),
+            Err(_) => Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::from("Failed to read config")),
         }
     } else {
-        Response::builder().status(StatusCode::SERVICE_UNAVAILABLE).body(Body::from("Admin state not initialized"))
+        Response::builder()
+            .status(StatusCode::SERVICE_UNAVAILABLE)
+            .body(Body::from("Admin state not initialized"))
     }
 }
 
@@ -136,58 +183,95 @@ async fn config_set_json(mut req: Request<Body>) -> Result<Response<Body>, hyper
     if let Some(state) = ADMIN_STATE.get() {
         let bytes = to_bytes(req.body_mut()).await.unwrap_or_default();
         if bytes.is_empty() {
-            return Response::builder().status(StatusCode::BAD_REQUEST).body(Body::from("Empty body"));
+            return Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body(Body::from("Empty body"));
         }
         match tokio::fs::read_to_string(&state.config_path).await {
             Ok(content) => {
                 match toml::from_str::<Config>(&content) {
                     Ok(mut cfg) => {
                         if let Ok(mut v) = serde_json::from_slice::<serde_json::Value>(&bytes) {
-                            if let Some(routing) = v.get_mut("routing") { cfg.routing = serde_json::from_value(routing.take()).ok(); }
-                            if let Some(plugins) = v.get_mut("plugins") { cfg.plugins = serde_json::from_value(plugins.take()).ok(); }
+                            if let Some(routing) = v.get_mut("routing") {
+                                cfg.routing = serde_json::from_value(routing.take()).ok();
+                            }
+                            if let Some(plugins) = v.get_mut("plugins") {
+                                cfg.plugins = serde_json::from_value(plugins.take()).ok();
+                            }
                             // Merge security section partially if provided
                             if let Some(security) = v.get_mut("security") {
                                 if let Some(obj) = security.as_object() {
                                     if let Some(existing) = cfg.security.clone() {
                                         let mut merged = existing;
                                         if let Some(rl_val) = obj.get("rate_limit") {
-                                            merged.rate_limit = serde_json::from_value(rl_val.clone()).ok();
+                                            merged.rate_limit =
+                                                serde_json::from_value(rl_val.clone()).ok();
                                         }
                                         if let Some(enabled_val) = obj.get("enabled") {
-                                            if let Some(b) = enabled_val.as_bool() { merged.enabled = b; }
+                                            if let Some(b) = enabled_val.as_bool() {
+                                                merged.enabled = b;
+                                            }
                                         }
                                         cfg.security = Some(merged);
                                     } else {
                                         // Try to parse full security object if complete
-                                        if let Ok(parsed) = serde_json::from_value::<crate::security::SecurityConfig>(security.clone()) {
+                                        if let Ok(parsed) = serde_json::from_value::<
+                                            crate::security::SecurityConfig,
+                                        >(
+                                            security.clone()
+                                        ) {
                                             cfg.security = Some(parsed);
                                         }
                                     }
                                 }
                                 let _ = security.take();
                             }
-                            let toml_str = toml::to_string_pretty(&cfg).unwrap_or_else(|_| content.clone());
+                            let toml_str =
+                                toml::to_string_pretty(&cfg).unwrap_or_else(|_| content.clone());
                             let ok = tokio::fs::write(&state.config_path, toml_str).await.is_ok();
                             audit(&req, ok, bytes.len(), "/admin/config/json").await;
-                            if ok { Response::builder().status(StatusCode::OK).body(Body::from("OK")) } else { Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).body(Body::from("Failed to write config")) }
+                            if ok {
+                                Response::builder()
+                                    .status(StatusCode::OK)
+                                    .body(Body::from("OK"))
+                            } else {
+                                Response::builder()
+                                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                                    .body(Body::from("Failed to write config"))
+                            }
                         } else {
-                            Response::builder().status(StatusCode::BAD_REQUEST).body(Body::from("Invalid JSON"))
+                            Response::builder()
+                                .status(StatusCode::BAD_REQUEST)
+                                .body(Body::from("Invalid JSON"))
                         }
                     }
-                    Err(_) => Response::builder().status(StatusCode::BAD_REQUEST).body(Body::from("Invalid config")),
+                    Err(_) => Response::builder()
+                        .status(StatusCode::BAD_REQUEST)
+                        .body(Body::from("Invalid config")),
                 }
             }
-            Err(_) => Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).body(Body::from("Failed to read config")),
+            Err(_) => Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::from("Failed to read config")),
         }
     } else {
-        Response::builder().status(StatusCode::SERVICE_UNAVAILABLE).body(Body::from("Admin state not initialized"))
+        Response::builder()
+            .status(StatusCode::SERVICE_UNAVAILABLE)
+            .body(Body::from("Admin state not initialized"))
     }
 }
 
 async fn status_json_with_role(role: Option<String>) -> serde_json::Value {
     if let Some(state) = ADMIN_STATE.get() {
         let domains = state.domain_config.read().unwrap().intercept_domains.len();
-        let exclude_domains = state.domain_config.read().unwrap().exclude_domains.as_ref().map(|v| v.len()).unwrap_or(0);
+        let exclude_domains = state
+            .domain_config
+            .read()
+            .unwrap()
+            .exclude_domains
+            .as_ref()
+            .map(|v| v.len())
+            .unwrap_or(0);
         let summary = state.load_balancer.read().await.get_summary().await;
         let targets = summary.total_targets;
         let routing_enabled = state.routing_engine.read().await.is_some();
@@ -352,27 +436,104 @@ setInterval(refresh, 3000);refresh();
 
 fn redact_secrets(s: &str) -> String {
     // very naive: replace lines containing `secret = "..."`
-    s.lines().map(|line|{
-        if line.trim_start().starts_with("secret = ") { "secret = \"***\"".to_string() } else { line.to_string() }
-    }).collect::<Vec<_>>().join("\n")
+    s.lines()
+        .map(|line| {
+            if line.trim_start().starts_with("secret = ") {
+                "secret = \"***\"".to_string()
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 async fn audit(req: &Request<Body>, ok: bool, bytes: usize, path: &str) {
     let now = chrono::Utc::now().to_rfc3339();
-    let remote = req.extensions().get::<std::net::SocketAddr>().map(|s| s.to_string()).unwrap_or_else(|| "-".into());
+    let remote = req
+        .extensions()
+        .get::<std::net::SocketAddr>()
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| "-".into());
     let role = role_of(req).await.unwrap_or_else(|| "unknown".into());
-    let line = format!("{} method={} path={} ok={} bytes={} ip={} role={}\n", now, req.method(), path, ok, bytes, remote, role);
+    let line = format!(
+        "{} method={} path={} ok={} bytes={} ip={} role={}\n",
+        now,
+        req.method(),
+        path,
+        ok,
+        bytes,
+        remote,
+        role
+    );
     // write to logs/admin_audit.log
-    if let Ok(mut f) = OpenOptions::new().create(true).append(true).open("logs/admin_audit.log").await { let _ = f.write_all(line.as_bytes()).await; }
-    if ok { tracing::info!(target: "admin_audit", %remote, %path, %role, bytes=bytes, "admin write ok"); } else { tracing::warn!(target: "admin_audit", %remote, %path, %role, bytes=bytes, "admin write failed"); }
+    if let Ok(mut f) = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("logs/admin_audit.log")
+        .await
+    {
+        let _ = f.write_all(line.as_bytes()).await;
+    }
+    if ok {
+        tracing::info!(target: "admin_audit", %remote, %path, %role, bytes=bytes, "admin write ok");
+    } else {
+        tracing::warn!(target: "admin_audit", %remote, %path, %role, bytes=bytes, "admin write failed");
+    }
 }
 
 async fn role_of(req: &Request<Body>) -> Option<String> {
-    if let Some(Some(tok)) = ADMIN_TOKEN.get() { if has_token(req, tok) { return Some("admin".into()); } }
-    if let Ok(v) = std::env::var("DISPA_EDITOR_TOKEN") { if has_token(req, &v) { return Some("editor".into()); } }
-    if let Ok(v) = std::env::var("DISPA_VIEWER_TOKEN") { if has_token(req, &v) { return Some("viewer".into()); } }
+    if let Some(Some(tok)) = ADMIN_TOKEN.get() {
+        if has_token(req, tok) {
+            return Some("admin".into());
+        }
+    }
+    if let Ok(v) = std::env::var("DISPA_EDITOR_TOKEN") {
+        if has_token(req, &v) {
+            return Some("editor".into());
+        }
+    }
+    if let Ok(v) = std::env::var("DISPA_VIEWER_TOKEN") {
+        if has_token(req, &v) {
+            return Some("viewer".into());
+        }
+    }
     // Fallback: map security.auth keys to editor role (write JSON) if present
-    if let Some(state) = ADMIN_STATE.get() { if let Ok(content) = tokio::fs::read_to_string(&state.config_path).await { if let Ok(cfg) = toml::from_str::<Config>(&content) { if let Some(auth)=cfg.security.and_then(|s| s.auth) { match auth.mode { crate::security::AuthMode::ApiKey => { if let Some(name)=auth.header_name { if let Some(h)=req.headers().get(name) { if let Ok(v)=h.to_str(){ if auth.keys.iter().any(|k| k==v){ return Some("editor".into()); } } } } }, crate::security::AuthMode::Bearer => { if let Some(h)=req.headers().get("authorization"){ if let Ok(v)=h.to_str(){ if let Some(tok)=v.strip_prefix("Bearer ").or_else(|| v.strip_prefix("bearer ")){ if auth.keys.iter().any(|k| k==tok){ return Some("editor".into()); } } } } } } } } } }
+    if let Some(state) = ADMIN_STATE.get() {
+        if let Ok(content) = tokio::fs::read_to_string(&state.config_path).await {
+            if let Ok(cfg) = toml::from_str::<Config>(&content) {
+                if let Some(auth) = cfg.security.and_then(|s| s.auth) {
+                    match auth.mode {
+                        crate::security::AuthMode::ApiKey => {
+                            if let Some(name) = auth.header_name {
+                                if let Some(h) = req.headers().get(name) {
+                                    if let Ok(v) = h.to_str() {
+                                        if auth.keys.iter().any(|k| k == v) {
+                                            return Some("editor".into());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        crate::security::AuthMode::Bearer => {
+                            if let Some(h) = req.headers().get("authorization") {
+                                if let Ok(v) = h.to_str() {
+                                    if let Some(tok) = v
+                                        .strip_prefix("Bearer ")
+                                        .or_else(|| v.strip_prefix("bearer "))
+                                    {
+                                        if auth.keys.iter().any(|k| k == tok) {
+                                            return Some("editor".into());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
     None
 }
 
@@ -380,10 +541,20 @@ async fn authorized(req: &Request<Body>) -> bool {
     // Accept any known role token for authorization; role-based checks
     // (admin/editor/viewer) are applied per-endpoint.
     if let Some(Some(tok)) = ADMIN_TOKEN.get() {
-        if has_token(req, tok) { return true; }
+        if has_token(req, tok) {
+            return true;
+        }
     }
-    if let Ok(v) = std::env::var("DISPA_EDITOR_TOKEN") { if has_token(req, &v) { return true; } }
-    if let Ok(v) = std::env::var("DISPA_VIEWER_TOKEN") { if has_token(req, &v) { return true; } }
+    if let Ok(v) = std::env::var("DISPA_EDITOR_TOKEN") {
+        if has_token(req, &v) {
+            return true;
+        }
+    }
+    if let Ok(v) = std::env::var("DISPA_VIEWER_TOKEN") {
+        if has_token(req, &v) {
+            return true;
+        }
+    }
 
     // Fallback: reuse security.auth if present in config
     if let Some(state) = ADMIN_STATE.get() {
@@ -392,10 +563,29 @@ async fn authorized(req: &Request<Body>) -> bool {
                 if let Some(auth) = cfg.security.and_then(|s| s.auth) {
                     match auth.mode {
                         crate::security::AuthMode::ApiKey => {
-                            if let Some(name) = auth.header_name { if let Some(h) = req.headers().get(name) { if let Ok(v)=h.to_str(){ if auth.keys.iter().any(|k| k==v){ return true; } } } }
+                            if let Some(name) = auth.header_name {
+                                if let Some(h) = req.headers().get(name) {
+                                    if let Ok(v) = h.to_str() {
+                                        if auth.keys.iter().any(|k| k == v) {
+                                            return true;
+                                        }
+                                    }
+                                }
+                            }
                         }
                         crate::security::AuthMode::Bearer => {
-                            if let Some(h) = req.headers().get("authorization") { if let Ok(v)=h.to_str(){ if let Some(tok)=v.strip_prefix("Bearer ").or_else(|| v.strip_prefix("bearer ")){ if auth.keys.iter().any(|k| k==tok){ return true; } } } }
+                            if let Some(h) = req.headers().get("authorization") {
+                                if let Ok(v) = h.to_str() {
+                                    if let Some(tok) = v
+                                        .strip_prefix("Bearer ")
+                                        .or_else(|| v.strip_prefix("bearer "))
+                                    {
+                                        if auth.keys.iter().any(|k| k == tok) {
+                                            return true;
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -409,18 +599,27 @@ fn has_token(req: &Request<Body>, tok: &str) -> bool {
     // Header x-admin-token takes precedence
     if let Some(h) = req.headers().get("x-admin-token") {
         if let Ok(v) = h.to_str() {
-            if v == tok { return true; }
+            if v == tok {
+                return true;
+            }
         }
     }
     // Authorization: Bearer/Basic
     if let Some(h) = req.headers().get("authorization") {
         if let Ok(v) = h.to_str() {
-            if let Some(b) = v.strip_prefix("Bearer ").or_else(|| v.strip_prefix("bearer ")) {
-                if b == tok { return true; }
+            if let Some(b) = v
+                .strip_prefix("Bearer ")
+                .or_else(|| v.strip_prefix("bearer "))
+            {
+                if b == tok {
+                    return true;
+                }
             } else if let Some(b64) = v.strip_prefix("Basic ") {
                 // very naive basic: expecting admin:token
                 if let Ok(decoded) = basic_decode(b64) {
-                    if decoded.ends_with(&format!(":{}", tok)) { return true; }
+                    if decoded.ends_with(&format!(":{}", tok)) {
+                        return true;
+                    }
                 }
             }
         }
@@ -442,16 +641,31 @@ fn basic_decode(s: &str) -> Result<String, ()> {
         }
     }
     let bytes = s.as_bytes();
-    if !bytes.len().is_multiple_of(4) { return Err(()); }
-    let mut out = Vec::with_capacity(bytes.len()/4*3);
+    if !bytes.len().is_multiple_of(4) {
+        return Err(());
+    }
+    let mut out = Vec::with_capacity(bytes.len() / 4 * 3);
     let mut i = 0;
     while i < bytes.len() {
-        let a = val(bytes[i]).ok_or(())?; let b = val(bytes[i+1]).ok_or(())?; let c = val(bytes[i+2]).ok_or(())?; let d = val(bytes[i+3]).ok_or(())?; i+=4;
-        if a==64 || b==64 { return Err(()); }
-        let n = ((a as u32) << 18) | ((b as u32) << 12) | (if c==64 {0} else {(c as u32) << 6}) | (if d==64 {0} else {d as u32});
+        let a = val(bytes[i]).ok_or(())?;
+        let b = val(bytes[i + 1]).ok_or(())?;
+        let c = val(bytes[i + 2]).ok_or(())?;
+        let d = val(bytes[i + 3]).ok_or(())?;
+        i += 4;
+        if a == 64 || b == 64 {
+            return Err(());
+        }
+        let n = ((a as u32) << 18)
+            | ((b as u32) << 12)
+            | (if c == 64 { 0 } else { (c as u32) << 6 })
+            | (if d == 64 { 0 } else { d as u32 });
         out.push(((n >> 16) & 0xFF) as u8);
-        if c != 64 { out.push(((n >> 8) & 0xFF) as u8); }
-        if d != 64 { out.push((n & 0xFF) as u8); }
+        if c != 64 {
+            out.push(((n >> 8) & 0xFF) as u8);
+        }
+        if d != 64 {
+            out.push((n & 0xFF) as u8);
+        }
     }
     String::from_utf8(out).map_err(|_| ())
 }
@@ -459,15 +673,57 @@ fn basic_decode(s: &str) -> Result<String, ()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::NamedTempFile;
-    use std::io::Write as _;
     use hyper::Body;
+    use std::io::Write as _;
+    use tempfile::NamedTempFile;
 
     #[tokio::test]
     async fn test_admin_rbac_and_config_json_merge() {
         let _ = tokio::time::timeout(std::time::Duration::from_secs(10), async {
         // Prepare temp config file
-        let mut cfg = crate::config::Config::default_config();
+        let mut cfg = crate::config::Config {
+            server: crate::config::ServerConfig {
+                bind: "127.0.0.1:8080".parse().unwrap(),
+                workers: Some(2),
+                max_connections: Some(1000),
+                connection_timeout: Some(30),
+            },
+            domains: crate::config::DomainConfig {
+                intercept_domains: vec!["example.com".to_string()],
+                exclude_domains: None,
+                wildcard_support: true,
+            },
+            targets: crate::config::TargetConfig {
+                targets: vec![],
+                load_balancing: crate::config::LoadBalancingConfig {
+                    algorithm: crate::config::LoadBalancingType::RoundRobin,
+                    lb_type: crate::config::LoadBalancingType::RoundRobin,
+                    sticky_sessions: Some(false),
+                },
+                health_check: crate::config::HealthCheckConfig {
+                    enabled: false,
+                    interval: 30,
+                    timeout: 10,
+                    healthy_threshold: 2,
+                    unhealthy_threshold: 3,
+                    threshold: 2,
+                },
+            },
+            logging: crate::config::LoggingConfig {
+                enabled: false,
+                log_type: crate::config::LoggingType::File,
+                database: None,
+                file: None,
+                retention_days: None,
+            },
+            monitoring: crate::config::MonitoringConfig::default(),
+            tls: None,
+            routing: None,
+            cache: None,
+            http_client: None,
+            plugins: None,
+            security: None,
+        };
         // Add security section for redaction test
         cfg.security = Some(crate::security::SecurityConfig{ enabled: true, access_control: None, auth: None, rate_limit: Some(crate::security::GlobalRateLimitConfig{ enabled: false, rate_per_sec: 0.0, burst: 0.0 }), ddos: None, jwt: Some(crate::security::JwtConfig{ enabled: true, algorithm: "HS256".into(), secret: Some("s3cr3t".into()), leeway_secs: Some(0), issuer: None, audience: None, cache_enabled: Some(true), rs256_keys: None, jwks_url: None, jwks_cache_secs: None }) });
         let mut temp = NamedTempFile::new().unwrap();
@@ -475,7 +731,7 @@ mod tests {
 
         // Build admin state
         let domain = std::sync::Arc::new(std::sync::RwLock::new(crate::config::DomainConfig{ intercept_domains: vec!["example.com".into()], exclude_domains: None, wildcard_support: true }));
-        let lb_cfg = crate::config::TargetConfig{ targets: vec![], load_balancing: crate::config::LoadBalancingConfig{ lb_type: crate::config::LoadBalancingType::RoundRobin, sticky_sessions: false }, health_check: crate::config::HealthCheckConfig{ enabled:false, interval:30, timeout:10, healthy_threshold:2, unhealthy_threshold:3 } };
+        let lb_cfg = crate::config::TargetConfig{ targets: vec![], load_balancing: crate::config::LoadBalancingConfig{ algorithm: crate::config::LoadBalancingType::RoundRobin, lb_type: crate::config::LoadBalancingType::RoundRobin, sticky_sessions: Some(false) }, health_check: crate::config::HealthCheckConfig{ enabled:false, interval:30, timeout:10, healthy_threshold:2, unhealthy_threshold:3, threshold: 2 } };
         let lb = std::sync::Arc::new(tokio::sync::RwLock::new(crate::balancer::LoadBalancer::new_for_test(lb_cfg)));
         let routing = std::sync::Arc::new(tokio::sync::RwLock::new(None));
         let plugins = std::sync::Arc::new(tokio::sync::RwLock::new(None));

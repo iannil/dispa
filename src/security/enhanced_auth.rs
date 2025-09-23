@@ -1,12 +1,12 @@
+use base64::{engine::general_purpose, Engine as _};
 use hyper::{Body, Request, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::IpAddr;
-use std::time::{SystemTime, UNIX_EPOCH, Duration};
-use tokio::sync::RwLock;
 use std::sync::Arc;
-use tracing::{warn, info, debug};
-use base64::{Engine as _, engine::general_purpose};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tokio::sync::RwLock;
+use tracing::{debug, info, warn};
 
 /// Enhanced authentication and authorization module
 /// Provides multi-factor authentication, session management, and role-based access control
@@ -45,10 +45,10 @@ pub struct AdminUser {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub enum AdminRole {
-    Admin,      // Full access
-    Editor,     // Can modify config
-    Viewer,     // Read-only access
-    Monitor,    // Only metrics and health
+    Admin,   // Full access
+    Editor,  // Can modify config
+    Viewer,  // Read-only access
+    Monitor, // Only metrics and health
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -133,29 +133,51 @@ impl EnhancedSecurityManager {
     }
 
     /// Authenticate admin request
-    pub async fn authenticate_admin_request(&self, req: &Request<Body>, client_ip: IpAddr) -> AuthResult {
+    pub async fn authenticate_admin_request(
+        &self,
+        req: &Request<Body>,
+        client_ip: IpAddr,
+    ) -> AuthResult {
         if !self.config.enabled {
-            return AuthResult::Allowed { role: AdminRole::Admin };
+            return AuthResult::Allowed {
+                role: AdminRole::Admin,
+            };
         }
 
         let admin_config = match &self.config.admin_auth {
             Some(config) if config.enabled => config,
-            _ => return AuthResult::Allowed { role: AdminRole::Admin },
+            _ => {
+                return AuthResult::Allowed {
+                    role: AdminRole::Admin,
+                }
+            }
         };
 
         // Check HTTPS requirement
         if admin_config.require_https && !self.is_https_request(req) {
             warn!("Admin request rejected: HTTPS required");
-            self.audit_event("admin_auth_failed", &format!("HTTPS required from {}", client_ip)).await;
-            return AuthResult::Denied { reason: "HTTPS required".to_string() };
+            self.audit_event(
+                "admin_auth_failed",
+                &format!("HTTPS required from {}", client_ip),
+            )
+            .await;
+            return AuthResult::Denied {
+                reason: "HTTPS required".to_string(),
+            };
         }
 
         // Check IP allowlist
         if let Some(allowed_ips) = &admin_config.allowed_ips {
             if !self.is_ip_allowed(&client_ip, allowed_ips) {
                 warn!("Admin request rejected: IP {} not in allowlist", client_ip);
-                self.audit_event("admin_auth_failed", &format!("IP {} not allowed", client_ip)).await;
-                return AuthResult::Denied { reason: "IP not allowed".to_string() };
+                self.audit_event(
+                    "admin_auth_failed",
+                    &format!("IP {} not allowed", client_ip),
+                )
+                .await;
+                return AuthResult::Denied {
+                    reason: "IP not allowed".to_string(),
+                };
             }
         }
 
@@ -165,8 +187,15 @@ impl EnhancedSecurityManager {
                 // Update last activity
                 self.update_session_activity(&session_id).await;
 
-                debug!("Admin request authenticated via session: {}", session.username);
-                self.audit_event("admin_session_used", &format!("User {} from {}", session.username, client_ip)).await;
+                debug!(
+                    "Admin request authenticated via session: {}",
+                    session.username
+                );
+                self.audit_event(
+                    "admin_session_used",
+                    &format!("User {} from {}", session.username, client_ip),
+                )
+                .await;
 
                 return AuthResult::Allowed { role: session.role };
             }
@@ -183,19 +212,36 @@ impl EnhancedSecurityManager {
         }
 
         warn!("Admin request rejected: No valid authentication");
-        self.audit_event("admin_auth_failed", &format!("No authentication from {}", client_ip)).await;
-        AuthResult::Denied { reason: "Authentication required".to_string() }
+        self.audit_event(
+            "admin_auth_failed",
+            &format!("No authentication from {}", client_ip),
+        )
+        .await;
+        AuthResult::Denied {
+            reason: "Authentication required".to_string(),
+        }
     }
 
     /// Authenticate user with username/password
-    async fn authenticate_user(&self, username: String, password: String, client_ip: IpAddr) -> AuthResult {
+    async fn authenticate_user(
+        &self,
+        username: String,
+        password: String,
+        client_ip: IpAddr,
+    ) -> AuthResult {
         let admin_config = self.config.admin_auth.as_ref().unwrap();
 
         // Check if user is locked out
         if self.is_user_locked(&username, &client_ip).await {
             warn!("Authentication attempt for locked user: {}", username);
-            self.audit_event("admin_auth_failed", &format!("User {} locked from {}", username, client_ip)).await;
-            return AuthResult::Denied { reason: "Account locked".to_string() };
+            self.audit_event(
+                "admin_auth_failed",
+                &format!("User {} locked from {}", username, client_ip),
+            )
+            .await;
+            return AuthResult::Denied {
+                reason: "Account locked".to_string(),
+            };
         }
 
         // Find user
@@ -204,12 +250,16 @@ impl EnhancedSecurityManager {
             Some(_) => {
                 warn!("Authentication attempt for disabled user: {}", username);
                 self.record_auth_attempt(&username, client_ip, false).await;
-                return AuthResult::Denied { reason: "Account disabled".to_string() };
+                return AuthResult::Denied {
+                    reason: "Account disabled".to_string(),
+                };
             }
             None => {
                 warn!("Authentication attempt for unknown user: {}", username);
                 self.record_auth_attempt(&username, client_ip, false).await;
-                return AuthResult::Denied { reason: "Invalid credentials".to_string() };
+                return AuthResult::Denied {
+                    reason: "Invalid credentials".to_string(),
+                };
             }
         };
 
@@ -217,8 +267,14 @@ impl EnhancedSecurityManager {
         if !self.verify_password(&password, &user.password_hash) {
             warn!("Invalid password for user: {}", username);
             self.record_auth_attempt(&username, client_ip, false).await;
-            self.audit_event("admin_auth_failed", &format!("Invalid password for {} from {}", username, client_ip)).await;
-            return AuthResult::Denied { reason: "Invalid credentials".to_string() };
+            self.audit_event(
+                "admin_auth_failed",
+                &format!("Invalid password for {} from {}", username, client_ip),
+            )
+            .await;
+            return AuthResult::Denied {
+                reason: "Invalid credentials".to_string(),
+            };
         }
 
         // Check MFA if required
@@ -234,15 +290,27 @@ impl EnhancedSecurityManager {
 
         // Successful authentication
         self.record_auth_attempt(&username, client_ip, true).await;
-        self.audit_event("admin_auth_success", &format!("User {} from {}", username, client_ip)).await;
+        self.audit_event(
+            "admin_auth_success",
+            &format!("User {} from {}", username, client_ip),
+        )
+        .await;
 
         // Create session if enabled
-        if self.config.session_management.as_ref().map(|s| s.enabled).unwrap_or(false) {
+        if self
+            .config
+            .session_management
+            .as_ref()
+            .map(|s| s.enabled)
+            .unwrap_or(false)
+        {
             let session_id = self.create_session(&username, &user.role, client_ip).await;
             info!("Created session {} for user {}", session_id, username);
         }
 
-        AuthResult::Allowed { role: user.role.clone() }
+        AuthResult::Allowed {
+            role: user.role.clone(),
+        }
     }
 
     /// Authenticate using bearer token
@@ -250,28 +318,52 @@ impl EnhancedSecurityManager {
         // Check environment variable tokens (backward compatibility)
         if let Ok(admin_token) = std::env::var("DISPA_ADMIN_TOKEN") {
             if token == admin_token {
-                self.audit_event("admin_token_auth", &format!("Admin token from {}", client_ip)).await;
-                return AuthResult::Allowed { role: AdminRole::Admin };
+                self.audit_event(
+                    "admin_token_auth",
+                    &format!("Admin token from {}", client_ip),
+                )
+                .await;
+                return AuthResult::Allowed {
+                    role: AdminRole::Admin,
+                };
             }
         }
 
         if let Ok(editor_token) = std::env::var("DISPA_EDITOR_TOKEN") {
             if token == editor_token {
-                self.audit_event("admin_token_auth", &format!("Editor token from {}", client_ip)).await;
-                return AuthResult::Allowed { role: AdminRole::Editor };
+                self.audit_event(
+                    "admin_token_auth",
+                    &format!("Editor token from {}", client_ip),
+                )
+                .await;
+                return AuthResult::Allowed {
+                    role: AdminRole::Editor,
+                };
             }
         }
 
         if let Ok(viewer_token) = std::env::var("DISPA_VIEWER_TOKEN") {
             if token == viewer_token {
-                self.audit_event("admin_token_auth", &format!("Viewer token from {}", client_ip)).await;
-                return AuthResult::Allowed { role: AdminRole::Viewer };
+                self.audit_event(
+                    "admin_token_auth",
+                    &format!("Viewer token from {}", client_ip),
+                )
+                .await;
+                return AuthResult::Allowed {
+                    role: AdminRole::Viewer,
+                };
             }
         }
 
         warn!("Invalid bearer token from: {}", client_ip);
-        self.audit_event("admin_auth_failed", &format!("Invalid token from {}", client_ip)).await;
-        AuthResult::Denied { reason: "Invalid token".to_string() }
+        self.audit_event(
+            "admin_auth_failed",
+            &format!("Invalid token from {}", client_ip),
+        )
+        .await;
+        AuthResult::Denied {
+            reason: "Invalid token".to_string(),
+        }
     }
 
     /// Check if user is currently locked out
@@ -332,11 +424,14 @@ impl EnhancedSecurityManager {
 
         // Apply lockout if threshold exceeded
         if attempt.failure_count >= admin_config.max_failed_attempts {
-            let lockout_duration = Duration::from_secs(admin_config.lockout_duration_minutes as u64 * 60);
+            let lockout_duration =
+                Duration::from_secs(admin_config.lockout_duration_minutes as u64 * 60);
             attempt.locked_until = Some(now + lockout_duration);
 
-            warn!("User {} locked for {} minutes after {} failed attempts",
-                  username, admin_config.lockout_duration_minutes, attempt.failure_count);
+            warn!(
+                "User {} locked for {} minutes after {} failed attempts",
+                username, admin_config.lockout_duration_minutes, attempt.failure_count
+            );
         }
 
         // Also track by IP
@@ -355,11 +450,14 @@ impl EnhancedSecurityManager {
 
         // Apply IP lockout if threshold exceeded
         if ip_attempt.failure_count >= admin_config.max_failed_attempts * 2 {
-            let lockout_duration = Duration::from_secs(admin_config.lockout_duration_minutes as u64 * 60);
+            let lockout_duration =
+                Duration::from_secs(admin_config.lockout_duration_minutes as u64 * 60);
             ip_attempt.locked_until = Some(now + lockout_duration);
 
-            warn!("IP {} locked for {} minutes after {} failed attempts",
-                  ip, admin_config.lockout_duration_minutes, ip_attempt.failure_count);
+            warn!(
+                "IP {} locked for {} minutes after {} failed attempts",
+                ip, admin_config.lockout_duration_minutes, ip_attempt.failure_count
+            );
         }
     }
 
@@ -421,7 +519,9 @@ impl EnhancedSecurityManager {
     }
 
     fn is_ip_allowed(&self, ip: &IpAddr, allowed_ips: &[String]) -> bool {
-        allowed_ips.iter().any(|pattern| self.ip_matches_pattern(ip, pattern))
+        allowed_ips
+            .iter()
+            .any(|pattern| self.ip_matches_pattern(ip, pattern))
     }
 
     fn ip_matches_pattern(&self, ip: &IpAddr, pattern: &str) -> bool {
@@ -438,8 +538,7 @@ impl EnhancedSecurityManager {
         }
 
         // Wildcard matching (e.g., 192.168.1.*)
-        if pattern.ends_with(".*") {
-            let prefix = &pattern[..pattern.len() - 2];
+        if let Some(prefix) = pattern.strip_suffix(".*") {
             return ip.to_string().starts_with(prefix);
         }
 
@@ -462,7 +561,8 @@ impl EnhancedSecurityManager {
         }
 
         // Look for session ID in header
-        req.headers().get("x-session-id")
+        req.headers()
+            .get("x-session-id")
             .and_then(|v| v.to_str().ok())
             .map(|s| s.to_string())
     }
@@ -494,7 +594,8 @@ impl EnhancedSecurityManager {
         }
 
         // Check custom headers for backward compatibility
-        req.headers().get("x-admin-token")
+        req.headers()
+            .get("x-admin-token")
             .or_else(|| req.headers().get("x-api-key"))
             .and_then(|v| v.to_str().ok())
             .map(|s| s.to_string())
@@ -517,7 +618,9 @@ impl EnhancedSecurityManager {
     }
 
     fn requires_mfa(&self, role: &AdminRole) -> bool {
-        self.config.mfa.as_ref()
+        self.config
+            .mfa
+            .as_ref()
             .map(|mfa| mfa.enabled && (mfa.require_for_admin && *role == AdminRole::Admin))
             .unwrap_or(false)
     }
@@ -552,7 +655,9 @@ impl EnhancedSecurityManager {
         let now = SystemTime::now();
 
         // Clean up expired sessions
-        let session_timeout = self.config.session_management
+        let session_timeout = self
+            .config
+            .session_management
             .as_ref()
             .map(|s| Duration::from_secs(s.timeout_minutes as u64 * 60))
             .unwrap_or(Duration::from_secs(3600));
@@ -587,9 +692,16 @@ impl EnhancedSecurityManager {
 /// Authentication result
 #[derive(Debug)]
 pub enum AuthResult {
-    Allowed { role: AdminRole },
-    Denied { reason: String },
-    MfaRequired { username: String, temp_token: String },
+    Allowed {
+        role: AdminRole,
+    },
+    Denied {
+        reason: String,
+    },
+    MfaRequired {
+        username: String,
+        temp_token: String,
+    },
 }
 
 impl AuthResult {
@@ -606,27 +718,21 @@ impl AuthResult {
 
     pub fn error_response(&self) -> Response<Body> {
         match self {
-            AuthResult::Denied { reason } => {
-                Response::builder()
-                    .status(StatusCode::UNAUTHORIZED)
-                    .header("WWW-Authenticate", "Bearer")
-                    .body(Body::from(reason.clone()))
-                    .unwrap()
-            }
-            AuthResult::MfaRequired { temp_token, .. } => {
-                Response::builder()
-                    .status(StatusCode::UNAUTHORIZED)
-                    .header("X-MFA-Required", "true")
-                    .header("X-Temp-Token", temp_token)
-                    .body(Body::from("MFA verification required"))
-                    .unwrap()
-            }
-            _ => {
-                Response::builder()
-                    .status(StatusCode::FORBIDDEN)
-                    .body(Body::from("Access denied"))
-                    .unwrap()
-            }
+            AuthResult::Denied { reason } => Response::builder()
+                .status(StatusCode::UNAUTHORIZED)
+                .header("WWW-Authenticate", "Bearer")
+                .body(Body::from(reason.clone()))
+                .unwrap(),
+            AuthResult::MfaRequired { temp_token, .. } => Response::builder()
+                .status(StatusCode::UNAUTHORIZED)
+                .header("X-MFA-Required", "true")
+                .header("X-Temp-Token", temp_token)
+                .body(Body::from("MFA verification required"))
+                .unwrap(),
+            _ => Response::builder()
+                .status(StatusCode::FORBIDDEN)
+                .body(Body::from("Access denied"))
+                .unwrap(),
         }
     }
 }
@@ -893,10 +999,7 @@ mod tests {
             admin_auth: Some(AdminAuthConfig {
                 enabled: true,
                 require_https: false,
-                allowed_ips: Some(vec![
-                    "127.0.0.1".to_string(),
-                    "192.168.1.*".to_string(),
-                ]),
+                allowed_ips: Some(vec!["127.0.0.1".to_string(), "192.168.1.*".to_string()]),
                 session_timeout_minutes: 60,
                 max_failed_attempts: 5,
                 lockout_duration_minutes: 15,
@@ -1035,9 +1138,11 @@ mod tests {
 
         // Get a session ID and test session-based authentication
         let session_id = security.generate_session_id();
-        security.create_session("session_user", &AdminRole::Editor, client_ip).await;
+        security
+            .create_session("session_user", &AdminRole::Editor, client_ip)
+            .await;
 
-        let req = Request::builder()
+        let _req = Request::builder()
             .header("cookie", format!("dispa_session={}", session_id))
             .body(Body::empty())
             .unwrap();
@@ -1089,7 +1194,10 @@ mod tests {
         let result = security.authenticate_admin_request(&req, client_ip).await;
         // Should require MFA, not immediately allow
         match result {
-            AuthResult::MfaRequired { username, temp_token } => {
+            AuthResult::MfaRequired {
+                username,
+                temp_token,
+            } => {
                 assert_eq!(username, "mfa_user");
                 assert!(temp_token.starts_with("temp_"));
             }
@@ -1099,11 +1207,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_auth_result_helpers() {
-        let allowed = AuthResult::Allowed { role: AdminRole::Admin };
+        let allowed = AuthResult::Allowed {
+            role: AdminRole::Admin,
+        };
         assert!(allowed.is_allowed());
         assert_eq!(allowed.role(), Some(&AdminRole::Admin));
 
-        let denied = AuthResult::Denied { reason: "Invalid credentials".to_string() };
+        let denied = AuthResult::Denied {
+            reason: "Invalid credentials".to_string(),
+        };
         assert!(!denied.is_allowed());
         assert_eq!(denied.role(), None);
 
@@ -1117,7 +1229,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_auth_result_error_responses() {
-        let denied = AuthResult::Denied { reason: "Invalid credentials".to_string() };
+        let denied = AuthResult::Denied {
+            reason: "Invalid credentials".to_string(),
+        };
         let response = denied.error_response();
         assert_eq!(response.status(), hyper::StatusCode::UNAUTHORIZED);
 
@@ -1160,8 +1274,12 @@ mod tests {
         let client_ip: IpAddr = "127.0.0.1".parse().unwrap();
 
         // Create some sessions and failed attempts
-        security.create_session("user1", &AdminRole::Admin, client_ip).await;
-        security.record_auth_attempt("failed_user", client_ip, false).await;
+        security
+            .create_session("user1", &AdminRole::Admin, client_ip)
+            .await;
+        security
+            .record_auth_attempt("failed_user", client_ip, false)
+            .await;
 
         // Initial state should have data
         let sessions = security.sessions.read().await;
@@ -1223,9 +1341,7 @@ mod tests {
         assert_eq!(session_id, Some("sess_456".to_string()));
 
         // Test no session ID
-        let req = Request::builder()
-            .body(Body::empty())
-            .unwrap();
+        let req = Request::builder().body(Body::empty()).unwrap();
 
         let session_id = security.extract_session_id(&req);
         assert_eq!(session_id, None);
@@ -1264,9 +1380,7 @@ mod tests {
         assert_eq!(token, Some("api_key789".to_string()));
 
         // Test no token
-        let req = Request::builder()
-            .body(Body::empty())
-            .unwrap();
+        let req = Request::builder().body(Body::empty()).unwrap();
 
         let token = security.extract_bearer_token(&req);
         assert_eq!(token, None);
@@ -1283,9 +1397,7 @@ mod tests {
         let client_ip: IpAddr = "127.0.0.1".parse().unwrap();
 
         // When security is disabled, should always allow with Admin role
-        let req = Request::builder()
-            .body(Body::empty())
-            .unwrap();
+        let req = Request::builder().body(Body::empty()).unwrap();
 
         let result = security.authenticate_admin_request(&req, client_ip).await;
         assert!(result.is_allowed());
