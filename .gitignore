@@ -1,9 +1,18 @@
-# Generated files
+# Rust generated files
 /target/
+Cargo.lock  # Optional: uncomment if this is a library crate
+*.pdb
+
+# Database files
 /data/*.db
 /data/*.db-*
+/data/*.sqlite
+/data/*.sqlite3
+
+# Log files
 /logs/*.log
 /logs/*.log.*
+*.log
 
 # IDE files
 .vscode/
@@ -11,14 +20,20 @@
 *.swp
 *.swo
 *~
+*.rs.bk
 
 # OS files
 .DS_Store
 Thumbs.db
+.directory
+*.lnk
 
 # Local configuration
 config/local-*.toml
 config/*.local.toml
+.env
+.env.local
+.env.production
 
 # Runtime files
 *.pid
@@ -28,3 +43,45 @@ config/*.local.toml
 *.bak
 *.backup
 *.tmp
+*~
+
+# Coverage and profiling
+coverage-report/
+*.profraw
+*.profdata
+tarpaulin-report.html
+*.gcda
+*.gcno
+llvm-cov-report/
+
+# Security and audit
+audit-report.*
+security-audit.*
+
+# Docker
+.dockerignore.local
+
+# Test artifacts
+test-results/
+*.test
+
+# Documentation build artifacts
+book/
+doc/
+
+# Temporary development files
+scratch/
+temp/
+TODO.local
+NOTES.local
+
+# Certificate and key files (if any)
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# WASM build artifacts (for plugin development)
+*.wasm
+pkg/
