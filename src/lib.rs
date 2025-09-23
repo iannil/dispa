@@ -30,21 +30,21 @@
 //! }
 //! ```
 
-pub mod balancer; // 负载均衡器模块，提供多种负载均衡算法和健康检查
-pub mod cache; // 缓存模块，提供HTTP响应缓存和ETag管理
-pub mod circuit_breaker; // 断路器模块，提供服务故障保护
-pub mod config; // 配置管理模块，支持TOML配置和热重载
-pub mod error; // 错误处理模块，定义统一的错误类型和处理
-pub mod graceful_shutdown; // 优雅关闭模块，确保零停机关闭
-pub mod logger; // 日志记录模块，支持文件和数据库双重存储
-pub mod monitoring; // 监控模块，提供指标收集和健康检查端点
-pub mod plugins; // 插件系统模块，支持请求和响应处理插件
-pub mod proxy; // 代理服务器模块，核心HTTP代理功能
-pub mod retry; // 重试机制模块，提供智能重试策略
-pub mod routing; // 路由引擎模块，支持高级路由规则
-pub mod security; // 安全模块，提供认证和授权功能
-pub mod state; // 统一状态管理模块，提供类型安全的状态访问
-pub mod tls; // TLS模块，提供SSL/TLS证书管理
+pub mod balancer;
+pub mod cache;
+pub mod circuit_breaker;
+pub mod config;
+pub mod error;
+pub mod graceful_shutdown;
+pub mod logger;
+pub mod monitoring;
+pub mod plugins;
+pub mod proxy;
+pub mod retry;
+pub mod routing;
+pub mod security;
+pub mod state;
+pub mod tls;
 
 // Re-export commonly used types
 pub use cache::{

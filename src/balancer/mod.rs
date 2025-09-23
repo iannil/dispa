@@ -35,7 +35,8 @@
 //! # }
 //! ```
 
-pub mod health_check; // 健康检查模块，提供并发健康监控
-pub mod load_balancer; // 负载均衡器实现，支持多种算法
+pub mod health_check;
+pub mod load_balancer;
 
-pub use load_balancer::LoadBalancer;
+pub use health_check::{HealthChecker, HealthStatus};
+pub use load_balancer::{ConnectionStats, LoadBalancer};
