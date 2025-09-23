@@ -38,5 +38,4 @@
 pub mod health_check;
 pub mod load_balancer;
 
-pub use health_check::{HealthChecker, HealthStatus};
-pub use load_balancer::{ConnectionStats, LoadBalancer};
+pub use load_balancer::LoadBalancer;
