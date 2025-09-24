@@ -32,7 +32,7 @@ impl ETagManager {
         let mut etag = String::with_capacity(66); // "0x" + 64 hex chars + quotes
         etag.push('"');
         for byte in hash {
-            write!(&mut etag, "{:02x}", byte).unwrap();
+            write!(&mut etag, "{:02x}", byte).expect("Writing to string should not fail");
         }
         etag.push('"');
 
@@ -161,7 +161,7 @@ impl ETagManager {
         let mut response = Response::builder()
             .status(StatusCode::NOT_MODIFIED)
             .body(Body::empty())
-            .unwrap();
+            .expect("Creating NOT_MODIFIED response with valid values should not fail");
 
         // Copy cacheable headers to 304 response
         self.copy_cacheable_headers(original_headers, response.headers_mut());
@@ -174,7 +174,7 @@ impl ETagManager {
         Response::builder()
             .status(StatusCode::PRECONDITION_FAILED)
             .body(Body::from("Precondition Failed"))
-            .unwrap()
+            .expect("Creating PRECONDITION_FAILED response with valid values should not fail")
     }
 
     /// Copy cacheable headers to 304 response
@@ -274,7 +274,7 @@ mod tests {
         let etag_manager = ETagManager::new(true);
 
         let content = b"Hello, World!";
-        let etag = etag_manager.generate_etag(content).unwrap();
+        let etag = etag_manager.generate_etag(content).unwrap(); // OK in tests - expected to succeed // OK in tests - expected to succeed
 
         // Should be a quoted hex string
         assert!(etag.starts_with('"'));
@@ -282,11 +282,11 @@ mod tests {
         assert_eq!(etag.len(), 66); // quotes + 64 hex chars
 
         // Same content should generate same ETag
-        let etag2 = etag_manager.generate_etag(content).unwrap();
+        let etag2 = etag_manager.generate_etag(content).unwrap(); // OK in tests - expected to succeed // OK in tests - expected to succeed
         assert_eq!(etag, etag2);
 
         // Different content should generate different ETag
-        let etag3 = etag_manager.generate_etag(b"Different content").unwrap();
+        let etag3 = etag_manager.generate_etag(b"Different content").unwrap(); // OK in tests - expected to succeed // OK in tests - expected to succeed
         assert_ne!(etag, etag3);
     }
 
@@ -295,11 +295,11 @@ mod tests {
         let etag_manager = ETagManager::new(true);
 
         let content = b"Hello, World!";
-        let weak_etag = etag_manager.generate_weak_etag(content).unwrap();
+        let weak_etag = etag_manager.generate_weak_etag(content).unwrap(); // OK in tests - expected to succeed
 
         assert!(weak_etag.starts_with("W/"));
 
-        let strong_etag = etag_manager.generate_etag(content).unwrap();
+        let strong_etag = etag_manager.generate_etag(content).unwrap(); // OK in tests - expected to succeed
         assert_eq!(weak_etag, format!("W/{}", strong_etag));
     }
 
@@ -373,7 +373,7 @@ mod tests {
             "if-none-match",
             "\"other\", \"123456789abcdef\", \"another\""
                 .parse()
-                .unwrap(),
+                .unwrap(), // OK in tests - expected to succeed
         );
         assert_eq!(
             etag_manager.validate_if_none_match(&headers, etag),
