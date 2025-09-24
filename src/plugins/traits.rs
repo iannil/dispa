@@ -56,13 +56,13 @@ mod tests {
         fn on_request(&self, req: &mut Request<Body>) -> PluginResult {
             // Add a test header to verify the plugin ran
             req.headers_mut()
-                .insert("x-test-plugin", self.name.parse().unwrap());
+                .insert("x-test-plugin", self.name.parse().unwrap()); // OK in tests - test plugin name parsing expected to succeed
 
             if self.should_short_circuit {
                 let response = Response::builder()
                     .status(StatusCode::OK)
                     .body(Body::from("Short circuited by plugin"))
-                    .unwrap();
+                    .unwrap(); // OK in tests - test response builder expected to succeed
                 PluginResult::ShortCircuit(response)
             } else {
                 PluginResult::Continue
@@ -90,7 +90,7 @@ mod tests {
         fn on_response(&self, resp: &mut Response<Body>) {
             // Add a test header to verify the plugin ran
             resp.headers_mut()
-                .insert("x-test-response-plugin", self.name.parse().unwrap());
+                .insert("x-test-response-plugin", self.name.parse().unwrap()); // OK in tests - test plugin name parsing expected to succeed
         }
     }
 
@@ -100,14 +100,14 @@ mod tests {
         let mut request = Request::builder()
             .uri("http://example.com/test")
             .body(Body::empty())
-            .unwrap();
+            .unwrap(); // OK in tests - test request builder expected to succeed
 
         let result = plugin.on_request(&mut request);
 
         assert_eq!(plugin.name(), "test-plugin");
         assert!(matches!(result, PluginResult::Continue));
         assert_eq!(
-            request.headers().get("x-test-plugin").unwrap(),
+            request.headers().get("x-test-plugin").unwrap(), // OK in tests - test header expected to exist
             "test-plugin"
         );
     }
@@ -118,7 +118,7 @@ mod tests {
         let mut request = Request::builder()
             .uri("http://example.com/test")
             .body(Body::empty())
-            .unwrap();
+            .unwrap(); // OK in tests - test request builder expected to succeed
 
         let result = plugin.on_request(&mut request);
 
@@ -136,13 +136,13 @@ mod tests {
         let mut response = Response::builder()
             .status(StatusCode::OK)
             .body(Body::from("test"))
-            .unwrap();
+            .unwrap(); // OK in tests - test response builder expected to succeed
 
         plugin.on_response(&mut response);
 
         assert_eq!(plugin.name(), "response-plugin");
         assert_eq!(
-            response.headers().get("x-test-response-plugin").unwrap(),
+            response.headers().get("x-test-response-plugin").unwrap(), // OK in tests - test header expected to exist
             "response-plugin"
         );
     }

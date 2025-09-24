@@ -643,7 +643,7 @@ mod tests {
         ];
 
         for addr_str in addresses {
-            let bind_addr: SocketAddr = addr_str.parse().unwrap();
+            let bind_addr: SocketAddr = addr_str.parse().unwrap(); // OK in tests - expected to succeed
             let server = ProxyServer::new(config.clone(), bind_addr, traffic_logger.clone());
             assert_eq!(server.bind_addr, bind_addr);
         }

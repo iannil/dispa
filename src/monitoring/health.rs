@@ -99,7 +99,7 @@ mod tests {
         // Verify empty targets
         let targets = &health["targets"];
         assert!(targets.is_object());
-        assert_eq!(targets.as_object().unwrap().len(), 0);
+        assert_eq!(targets.as_object().unwrap().len(), 0); // OK in tests - targets expected to be object
     }
 
     #[test]
@@ -115,7 +115,7 @@ mod tests {
         let targets = &health["targets"];
         assert!(targets.is_object());
 
-        let targets_obj = targets.as_object().unwrap();
+        let targets_obj = targets.as_object().unwrap(); // OK in tests - targets expected to be object
         assert_eq!(targets_obj.len(), 3);
         assert_eq!(targets_obj["backend1"], "healthy");
         assert_eq!(targets_obj["backend2"], "healthy");
@@ -136,7 +136,7 @@ mod tests {
         let targets = &health["targets"];
         assert!(targets.is_object());
 
-        let targets_obj = targets.as_object().unwrap();
+        let targets_obj = targets.as_object().unwrap(); // OK in tests - targets expected to be object
         assert_eq!(targets_obj.len(), 4);
         assert_eq!(targets_obj["healthy_backend"], "healthy");
         assert_eq!(targets_obj["unhealthy_backend"], "unhealthy");
@@ -156,7 +156,7 @@ mod tests {
         assert_eq!(health["status"], "healthy");
 
         let targets = &health["targets"];
-        let targets_obj = targets.as_object().unwrap();
+        let targets_obj = targets.as_object().unwrap(); // OK in tests - targets expected to be object
         assert_eq!(targets_obj["backend1"], "unhealthy");
         assert_eq!(targets_obj["backend2"], "unhealthy");
     }
@@ -182,7 +182,7 @@ mod tests {
     #[test]
     fn test_timestamp_format() {
         let health = get_system_health();
-        let timestamp_str = health["timestamp"].as_str().unwrap();
+        let timestamp_str = health["timestamp"].as_str().unwrap(); // OK in tests - timestamp expected to be string
 
         // Should be able to parse the timestamp back
         let parsed = chrono::DateTime::parse_from_rfc3339(timestamp_str);
@@ -190,7 +190,7 @@ mod tests {
 
         // Should be recent (within last minute)
         let now = chrono::Utc::now();
-        let parsed_utc = parsed.unwrap().with_timezone(&chrono::Utc);
+        let parsed_utc = parsed.unwrap().with_timezone(&chrono::Utc); // OK in tests - timestamp parsing expected to succeed
         let diff = now.signed_duration_since(parsed_utc);
         assert!(diff.num_seconds() < 60, "Timestamp should be recent");
     }
@@ -223,9 +223,9 @@ mod tests {
         assert!(json_str.is_ok());
 
         // Should be able to deserialize back
-        let reparsed: Result<Value, _> = serde_json::from_str(&json_str.unwrap());
+        let reparsed: Result<Value, _> = serde_json::from_str(&json_str.unwrap()); // OK in tests - JSON serialization expected to succeed
         assert!(reparsed.is_ok());
-        assert_eq!(health, reparsed.unwrap());
+        assert_eq!(health, reparsed.unwrap()); // OK in tests - JSON deserialization expected to succeed
     }
 
     #[test]
@@ -239,7 +239,7 @@ mod tests {
         let health = get_detailed_health(target_health);
 
         let targets = &health["targets"];
-        let targets_obj = targets.as_object().unwrap();
+        let targets_obj = targets.as_object().unwrap(); // OK in tests - targets expected to be object
         assert_eq!(targets_obj.len(), 2); // Only 2 unique targets
         assert_eq!(targets_obj["backend1"], "unhealthy"); // Last value wins
         assert_eq!(targets_obj["backend2"], "healthy");
@@ -255,7 +255,7 @@ mod tests {
 
         let health = get_detailed_health(target_health);
         let targets = &health["targets"];
-        let targets_obj = targets.as_object().unwrap();
+        let targets_obj = targets.as_object().unwrap(); // OK in tests - targets expected to be object
 
         assert_eq!(targets_obj.len(), 100);
 

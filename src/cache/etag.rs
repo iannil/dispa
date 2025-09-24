@@ -274,7 +274,7 @@ mod tests {
         let etag_manager = ETagManager::new(true);
 
         let content = b"Hello, World!";
-        let etag = etag_manager.generate_etag(content).unwrap(); // OK in tests - expected to succeed // OK in tests - expected to succeed
+        let etag = etag_manager.generate_etag(content).unwrap(); // OK in tests - expected to succeed
 
         // Should be a quoted hex string
         assert!(etag.starts_with('"'));
@@ -282,11 +282,11 @@ mod tests {
         assert_eq!(etag.len(), 66); // quotes + 64 hex chars
 
         // Same content should generate same ETag
-        let etag2 = etag_manager.generate_etag(content).unwrap(); // OK in tests - expected to succeed // OK in tests - expected to succeed
+        let etag2 = etag_manager.generate_etag(content).unwrap(); // OK in tests - expected to succeed
         assert_eq!(etag, etag2);
 
         // Different content should generate different ETag
-        let etag3 = etag_manager.generate_etag(b"Different content").unwrap(); // OK in tests - expected to succeed // OK in tests - expected to succeed
+        let etag3 = etag_manager.generate_etag(b"Different content").unwrap(); // OK in tests - expected to succeed
         assert_ne!(etag, etag3);
     }
 
@@ -319,17 +319,17 @@ mod tests {
         let mut headers = HeaderMap::new();
         assert!(!etag_manager.has_conditional_headers(&headers));
 
-        headers.insert("if-none-match", "\"123456\"".parse().unwrap());
+        headers.insert("if-none-match", "\"123456\"".parse().unwrap()); // OK in tests - valid header value
         assert!(etag_manager.has_conditional_headers(&headers));
 
         headers.clear();
-        headers.insert("if-match", "\"123456\"".parse().unwrap());
+        headers.insert("if-match", "\"123456\"".parse().unwrap()); // OK in tests - valid header value
         assert!(etag_manager.has_conditional_headers(&headers));
 
         headers.clear();
         headers.insert(
             "if-modified-since",
-            "Wed, 21 Oct 2015 07:28:00 GMT".parse().unwrap(),
+            "Wed, 21 Oct 2015 07:28:00 GMT".parse().unwrap(), // OK in tests - valid header value
         );
         assert!(etag_manager.has_conditional_headers(&headers));
     }
@@ -348,21 +348,21 @@ mod tests {
         );
 
         // Matching ETag
-        headers.insert("if-none-match", etag.parse().unwrap());
+        headers.insert("if-none-match", etag.parse().unwrap()); // OK in tests - valid header value
         assert_eq!(
             etag_manager.validate_if_none_match(&headers, etag),
             ConditionalResult::NotModified
         );
 
         // Non-matching ETag
-        headers.insert("if-none-match", "\"different\"".parse().unwrap());
+        headers.insert("if-none-match", "\"different\"".parse().unwrap()); // OK in tests - valid header value
         assert_eq!(
             etag_manager.validate_if_none_match(&headers, etag),
             ConditionalResult::Continue
         );
 
         // Wildcard
-        headers.insert("if-none-match", "*".parse().unwrap());
+        headers.insert("if-none-match", "*".parse().unwrap()); // OK in tests - valid header value
         assert_eq!(
             etag_manager.validate_if_none_match(&headers, etag),
             ConditionalResult::NotModified
@@ -395,21 +395,21 @@ mod tests {
         );
 
         // Matching ETag
-        headers.insert("if-match", etag.parse().unwrap());
+        headers.insert("if-match", etag.parse().unwrap()); // OK in tests - valid header value
         assert_eq!(
             etag_manager.validate_if_match(&headers, etag),
             ConditionalResult::Continue
         );
 
         // Non-matching ETag
-        headers.insert("if-match", "\"different\"".parse().unwrap());
+        headers.insert("if-match", "\"different\"".parse().unwrap()); // OK in tests - valid header value
         assert_eq!(
             etag_manager.validate_if_match(&headers, etag),
             ConditionalResult::PreconditionFailed
         );
 
         // Wildcard
-        headers.insert("if-match", "*".parse().unwrap());
+        headers.insert("if-match", "*".parse().unwrap()); // OK in tests - valid header value
         assert_eq!(
             etag_manager.validate_if_match(&headers, etag),
             ConditionalResult::Continue
@@ -438,9 +438,9 @@ mod tests {
         let etag_manager = ETagManager::new(true);
 
         let mut original_headers = HeaderMap::new();
-        original_headers.insert("etag", "\"123456\"".parse().unwrap());
-        original_headers.insert("cache-control", "max-age=3600".parse().unwrap());
-        original_headers.insert("custom-header", "should-not-copy".parse().unwrap());
+        original_headers.insert("etag", "\"123456\"".parse().unwrap()); // OK in tests - valid header value
+        original_headers.insert("cache-control", "max-age=3600".parse().unwrap()); // OK in tests - valid header value
+        original_headers.insert("custom-header", "should-not-copy".parse().unwrap()); // OK in tests - valid header value
 
         let response = etag_manager.create_not_modified_response(&original_headers);
 
@@ -458,7 +458,7 @@ mod tests {
             StatusCode::OK,
             {
                 let mut headers = HeaderMap::new();
-                headers.insert("etag", "\"123456\"".parse().unwrap());
+                headers.insert("etag", "\"123456\"".parse().unwrap()); // OK in tests - valid header value
                 headers
             },
             b"test content".to_vec(),
@@ -474,7 +474,7 @@ mod tests {
         );
 
         // Matching If-None-Match
-        request_headers.insert("if-none-match", "\"123456\"".parse().unwrap());
+        request_headers.insert("if-none-match", "\"123456\"".parse().unwrap()); // OK in tests - valid header value
         assert_eq!(
             etag_manager.process_conditional_request(&request_headers, &entry),
             ConditionalResult::NotModified
@@ -482,7 +482,7 @@ mod tests {
 
         // Non-matching If-Match
         request_headers.clear();
-        request_headers.insert("if-match", "\"different\"".parse().unwrap());
+        request_headers.insert("if-match", "\"different\"".parse().unwrap()); // OK in tests - valid header value
         assert_eq!(
             etag_manager.process_conditional_request(&request_headers, &entry),
             ConditionalResult::PreconditionFailed
@@ -494,7 +494,7 @@ mod tests {
         let etag_manager = ETagManager::new(false);
 
         let mut headers = HeaderMap::new();
-        headers.insert("if-none-match", "\"123456\"".parse().unwrap());
+        headers.insert("if-none-match", "\"123456\"".parse().unwrap()); // OK in tests - valid header value
 
         assert!(!etag_manager.has_conditional_headers(&headers));
         assert_eq!(

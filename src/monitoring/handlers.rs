@@ -14,7 +14,7 @@ pub async fn handle_metrics(req: Request<Body>) -> Result<Response<Body>, Infall
             Err(_) => Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
                 .body(Body::from("Admin error"))
-                .unwrap(),
+                .expect("Building admin error response should not fail"),
         });
     }
 
@@ -25,7 +25,7 @@ pub async fn handle_metrics(req: Request<Body>) -> Result<Response<Body>, Infall
             Ok(Response::builder()
                 .header("Content-Type", "text/plain; version=0.0.4")
                 .body(Body::from(metrics))
-                .unwrap())
+                .expect("Building metrics response should not fail"))
         }
         (&Method::GET, "/metrics/json") => {
             let metrics_json = generate_json_metrics().await;
@@ -33,14 +33,14 @@ pub async fn handle_metrics(req: Request<Body>) -> Result<Response<Body>, Infall
             Ok(Response::builder()
                 .header("Content-Type", "application/json")
                 .body(Body::from(metrics_json))
-                .unwrap())
+                .expect("Building JSON metrics response should not fail"))
         }
         _ => Ok(Response::builder()
             .status(StatusCode::NOT_FOUND)
             .body(Body::from(
                 "Not found. Available endpoints: /metrics, /metrics/json",
             ))
-            .unwrap()),
+            .expect("Building not found response should not fail")),
     }
 }
 
@@ -57,7 +57,7 @@ pub async fn handle_health(req: Request<Body>) -> Result<Response<Body>, Infalli
             Ok(Response::builder()
                 .header("Content-Type", "application/json")
                 .body(Body::from(health_response.to_string()))
-                .unwrap())
+                .expect("Building health response should not fail"))
         }
         (&Method::GET, "/ready") => {
             let is_ready = check_readiness().await;
@@ -77,7 +77,7 @@ pub async fn handle_health(req: Request<Body>) -> Result<Response<Body>, Infalli
                 .status(status_code)
                 .header("Content-Type", "application/json")
                 .body(Body::from(response.to_string()))
-                .unwrap())
+                .expect("Building readiness response should not fail"))
         }
         (&Method::GET, "/metrics") => {
             let metrics = json!({
@@ -90,13 +90,13 @@ pub async fn handle_health(req: Request<Body>) -> Result<Response<Body>, Infalli
             Ok(Response::builder()
                 .header("Content-Type", "application/json")
                 .body(Body::from(metrics.to_string()))
-                .unwrap())
+                .expect("Building metrics JSON response should not fail"))
         }
         _ => Ok(Response::builder()
             .status(StatusCode::NOT_FOUND)
             .body(Body::from(
                 "Not found. Available endpoints: /health, /ready, /metrics",
             ))
-            .unwrap()),
+            .expect("Building not found response should not fail")),
     }
 }

@@ -225,15 +225,15 @@ mod tests {
         let mut headers = HeaderMap::new();
         assert!(!policy.has_no_cache_headers(&headers));
 
-        headers.insert("authorization", "Bearer token".parse().unwrap());
+        headers.insert("authorization", "Bearer token".parse().unwrap()); // OK in tests - valid header value
         assert!(policy.has_no_cache_headers(&headers));
 
         headers.clear();
-        headers.insert("cookie", "session=abc".parse().unwrap());
+        headers.insert("cookie", "session=abc".parse().unwrap()); // OK in tests - valid header value
         assert!(policy.has_no_cache_headers(&headers));
 
         headers.clear();
-        headers.insert("accept", "application/json".parse().unwrap());
+        headers.insert("accept", "application/json".parse().unwrap()); // OK in tests - valid header value
         assert!(!policy.has_no_cache_headers(&headers));
     }
 
@@ -251,8 +251,8 @@ mod tests {
         let mut headers = HeaderMap::new();
         assert_eq!(policy.get_vary_suffix(&headers), "");
 
-        headers.insert("accept", "application/json".parse().unwrap());
-        headers.insert("accept-encoding", "gzip".parse().unwrap());
+        headers.insert("accept", "application/json".parse().unwrap()); // OK in tests - valid header value
+        headers.insert("accept-encoding", "gzip".parse().unwrap()); // OK in tests - valid header value
 
         let suffix = policy.get_vary_suffix(&headers);
         assert!(suffix.contains("accept:application/json"));
@@ -262,8 +262,8 @@ mod tests {
     #[test]
     fn test_cache_entry_creation() {
         let mut headers = HeaderMap::new();
-        headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
-        headers.insert(ETAG, "\"123456\"".parse().unwrap());
+        headers.insert(CONTENT_TYPE, "application/json".parse().unwrap()); // OK in tests - valid header value
+        headers.insert(ETAG, "\"123456\"".parse().unwrap()); // OK in tests - valid header value
 
         let body = b"{'data': 'test'}".to_vec();
         let entry = CacheEntry::new(
@@ -285,7 +285,7 @@ mod tests {
     #[test]
     fn test_cache_entry_etag_matching() {
         let mut headers = HeaderMap::new();
-        headers.insert(ETAG, "\"123456\"".parse().unwrap());
+        headers.insert(ETAG, "\"123456\"".parse().unwrap()); // OK in tests - valid header value
 
         let entry = CacheEntry::new(
             StatusCode::OK,
