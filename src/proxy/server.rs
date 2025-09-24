@@ -287,7 +287,7 @@ mod tests {
     fn create_test_config() -> Config {
         Config {
             server: ServerConfig {
-                bind: "127.0.0.1:0".parse().unwrap(), // Use port 0 for auto-assignment
+                bind: "127.0.0.1:0".parse().unwrap(), // OK in tests - expected to succeed
                 workers: Some(2),
                 max_connections: Some(1000),
                 connection_timeout: Some(30),
@@ -366,7 +366,7 @@ mod tests {
     #[tokio::test]
     async fn test_proxy_server_creation() {
         let config = create_test_config();
-        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap(); // OK in tests - expected to succeed
         let traffic_logger = create_test_traffic_logger();
 
         let server = ProxyServer::new(config.clone(), bind_addr, traffic_logger);
@@ -388,17 +388,17 @@ mod tests {
         let traffic_logger = create_test_traffic_logger();
 
         // Test with IPv4 loopback
-        let ipv4_addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let ipv4_addr: SocketAddr = "127.0.0.1:8080".parse().unwrap(); // OK in tests - expected to succeed
         let server_ipv4 = ProxyServer::new(config.clone(), ipv4_addr, traffic_logger.clone());
         assert_eq!(server_ipv4.bind_addr, ipv4_addr);
 
         // Test with IPv4 any address
-        let any_addr: SocketAddr = "0.0.0.0:8080".parse().unwrap();
+        let any_addr: SocketAddr = "0.0.0.0:8080".parse().unwrap(); // OK in tests - expected to succeed
         let server_any = ProxyServer::new(config.clone(), any_addr, traffic_logger.clone());
         assert_eq!(server_any.bind_addr, any_addr);
 
         // Test with specific port
-        let specific_port: SocketAddr = "127.0.0.1:9999".parse().unwrap();
+        let specific_port: SocketAddr = "127.0.0.1:9999".parse().unwrap(); // OK in tests - expected to succeed
         let server_port = ProxyServer::new(config, specific_port, traffic_logger);
         assert_eq!(server_port.bind_addr, specific_port);
     }
@@ -412,7 +412,7 @@ mod tests {
         config.domains.wildcard_support = false;
         config.targets.load_balancing.sticky_sessions = Some(true);
 
-        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap(); // OK in tests - expected to succeed
         let traffic_logger = create_test_traffic_logger();
 
         let server = ProxyServer::new(config.clone(), bind_addr, traffic_logger);
@@ -439,7 +439,7 @@ mod tests {
             timeout: Some(15),
         }];
 
-        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap(); // OK in tests - expected to succeed
         let traffic_logger = create_test_traffic_logger();
 
         let server = ProxyServer::new(config, bind_addr, traffic_logger);
@@ -466,7 +466,7 @@ mod tests {
             "debug.staging.example.com".to_string(),
         ]);
 
-        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap(); // OK in tests - expected to succeed
         let traffic_logger = create_test_traffic_logger();
 
         let server = ProxyServer::new(config, bind_addr, traffic_logger);
@@ -497,7 +497,7 @@ mod tests {
                 .domains
                 .exclude_domains
                 .as_ref()
-                .unwrap()
+                .unwrap() // OK in tests - expected to succeed
                 .len(),
             2
         );
@@ -506,7 +506,7 @@ mod tests {
             .domains
             .exclude_domains
             .as_ref()
-            .unwrap()
+            .unwrap() // OK in tests - expected to succeed
             .iter()
             .any(|s| s == "admin.api.example.com"));
     }
@@ -514,7 +514,7 @@ mod tests {
     #[tokio::test]
     async fn test_proxy_server_with_different_load_balancing_types() {
         let traffic_logger = create_test_traffic_logger();
-        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap(); // OK in tests - expected to succeed
 
         // Test RoundRobin
         let mut config_rr = create_test_config();
@@ -547,7 +547,7 @@ mod tests {
     #[tokio::test]
     async fn test_proxy_server_load_balancer_initialization() {
         let config = create_test_config();
-        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap(); // OK in tests - expected to succeed
         let traffic_logger = create_test_traffic_logger();
 
         let server = ProxyServer::new(config.clone(), bind_addr, traffic_logger);
@@ -571,7 +571,7 @@ mod tests {
         config.targets.health_check.healthy_threshold = 3;
         config.targets.health_check.unhealthy_threshold = 5;
 
-        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap(); // OK in tests - expected to succeed
         let traffic_logger = create_test_traffic_logger();
 
         let server = ProxyServer::new(config, bind_addr, traffic_logger);
@@ -590,7 +590,7 @@ mod tests {
         config.logging.log_type = LoggingType::Both;
         config.logging.retention_days = Some(14);
 
-        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap(); // OK in tests - expected to succeed
 
         // Create a new traffic logger with logging enabled for this test
         let traffic_logger = TrafficLogger::new(LoggingConfig {
@@ -619,7 +619,7 @@ mod tests {
         config.monitoring.metrics_port = 9091;
         config.monitoring.health_check_port = 8082;
 
-        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap(); // OK in tests - expected to succeed
         let traffic_logger = create_test_traffic_logger();
 
         let server = ProxyServer::new(config, bind_addr, traffic_logger);
@@ -652,7 +652,7 @@ mod tests {
     #[tokio::test]
     async fn test_proxy_server_config_cloning() {
         let config = create_test_config();
-        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap(); // OK in tests - expected to succeed
         let traffic_logger = create_test_traffic_logger();
 
         // Create multiple servers with the same config to test cloning behavior
@@ -676,7 +676,7 @@ mod tests {
         let mut config = create_test_config();
         config.domains.exclude_domains = None;
 
-        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap(); // OK in tests - expected to succeed
         let traffic_logger = create_test_traffic_logger();
 
         let server = ProxyServer::new(config, bind_addr, traffic_logger);
@@ -722,7 +722,7 @@ mod tests {
             },
         ];
 
-        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap(); // OK in tests - expected to succeed
         let traffic_logger = create_test_traffic_logger();
 
         let server = ProxyServer::new(config, bind_addr, traffic_logger);
@@ -754,7 +754,7 @@ mod tests {
     async fn test_proxy_server_creation_performance() {
         tokio::time::timeout(Duration::from_secs(10), async {
             let config = create_test_config();
-            let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+            let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap(); // OK in tests - expected to succeed
             let traffic_logger = create_test_traffic_logger();
             let start = std::time::Instant::now();
             for _ in 0..100 {
@@ -775,7 +775,7 @@ mod tests {
     async fn test_proxy_server_run_method() {
         // Test that the server run method can be called and starts successfully
         let config = create_test_config();
-        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap(); // OK in tests - expected to succeed
         let traffic_logger = create_test_traffic_logger();
 
         tokio::time::timeout(Duration::from_secs(10), async {
@@ -810,7 +810,7 @@ mod tests {
         ];
 
         for (i, config) in configs.into_iter().enumerate() {
-            let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+            let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap(); // OK in tests - expected to succeed
             let traffic_logger = create_test_traffic_logger();
             tokio::time::timeout(Duration::from_secs(10), async move {
                 let server = ProxyServer::new(config, bind_addr, traffic_logger);
@@ -833,7 +833,7 @@ mod tests {
         let traffic_logger = create_test_traffic_logger();
 
         // Use port 0 (auto-assign) to avoid permission issues, but test cancellation behavior
-        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap(); // OK in tests - expected to succeed
         tokio::time::timeout(Duration::from_secs(10), async {
             let server = ProxyServer::new(config, bind_addr, traffic_logger);
             let server_handle = tokio::spawn(async move { server.run().await });
@@ -856,7 +856,7 @@ mod tests {
 
         // Start multiple servers concurrently (they should handle port conflicts gracefully)
         for i in 0..3 {
-            let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+            let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap(); // OK in tests - expected to succeed
             let server = ProxyServer::new(config.clone(), bind_addr, traffic_logger.clone());
 
             let handle = tokio::spawn(async move {
@@ -878,7 +878,7 @@ mod tests {
     async fn test_proxy_server_shutdown_behavior() {
         // Test proper server shutdown behavior
         let config = create_test_config();
-        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap(); // OK in tests - expected to succeed
         let traffic_logger = create_test_traffic_logger();
 
         tokio::time::timeout(Duration::from_secs(10), async {
@@ -901,7 +901,7 @@ mod tests {
             let config = create_test_config();
             // TLS is disabled by default in test config
 
-            let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+            let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap(); // OK in tests - expected to succeed
             let traffic_logger = create_test_traffic_logger();
             let server = ProxyServer::new(config, bind_addr, traffic_logger);
 
@@ -922,7 +922,7 @@ mod tests {
         let config = create_test_config();
         // 暂时跳过TLS配置细节，等待配置结构修复
 
-        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap(); // OK in tests - expected to succeed
         let traffic_logger = create_test_traffic_logger();
         let server = ProxyServer::new(config, bind_addr, traffic_logger);
 
@@ -938,7 +938,7 @@ mod tests {
         let config = create_test_config();
         // 暂时跳过SNI配置细节，等待配置结构修复
 
-        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap(); // OK in tests - expected to succeed
         let traffic_logger = create_test_traffic_logger();
         let server = ProxyServer::new(config, bind_addr, traffic_logger);
 
@@ -954,9 +954,9 @@ mod tests {
         // Test server error handling with invalid configuration
         let config = create_test_config();
         // 暂时跳过无效地址测试，等待配置结构修复
-        // config.server.bind_address = "invalid_address".parse().unwrap();
+        // config.server.bind_address = "invalid_address".parse().unwrap(); // OK in tests - expected to succeed
 
-        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap(); // OK in tests - expected to succeed
         let traffic_logger = create_test_traffic_logger();
         let server = ProxyServer::new(config, bind_addr, traffic_logger);
 
@@ -972,7 +972,7 @@ mod tests {
             config.targets.health_check.enabled = true;
             config.targets.health_check.interval = 1; // Very short interval for testing
 
-            let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+            let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap(); // OK in tests - expected to succeed
             let traffic_logger = create_test_traffic_logger();
             let server = ProxyServer::new(config, bind_addr, traffic_logger);
 
@@ -997,7 +997,7 @@ mod tests {
             config.logging.enabled = true;
             config.logging.log_type = crate::config::LoggingType::File;
 
-            let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+            let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap(); // OK in tests - expected to succeed
             let traffic_logger = create_test_traffic_logger();
             let server = ProxyServer::new(config, bind_addr, traffic_logger);
 
@@ -1022,7 +1022,7 @@ mod tests {
             // 暂时跳过缓存配置测试，等待配置结构修复
             // config.caching = Some(crate::config::CacheConfig { ... });
 
-            let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+            let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap(); // OK in tests - expected to succeed
             let traffic_logger = create_test_traffic_logger();
             let server = ProxyServer::new(config, bind_addr, traffic_logger);
 
@@ -1048,7 +1048,7 @@ mod tests {
             config.monitoring.metrics_port = 0; // Use ephemeral port for testing
             config.monitoring.health_check_port = 0;
 
-            let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+            let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap(); // OK in tests - expected to succeed
             let traffic_logger = create_test_traffic_logger();
             let server = ProxyServer::new(config, bind_addr, traffic_logger);
 
@@ -1082,7 +1082,7 @@ mod tests {
                 let mut config = create_test_config();
                 config.targets.load_balancing.lb_type = algorithm.clone();
 
-                let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+                let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap(); // OK in tests - expected to succeed
                 let traffic_logger = create_test_traffic_logger();
                 let server = ProxyServer::new(config, bind_addr, traffic_logger);
 
@@ -1114,7 +1114,7 @@ mod tests {
             // 暂时跳过安全配置测试，等待配置结构修复
             // config.security = Some(...);
 
-            let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+            let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap(); // OK in tests - expected to succeed
             let traffic_logger = create_test_traffic_logger();
             let server = ProxyServer::new(config, bind_addr, traffic_logger);
 
