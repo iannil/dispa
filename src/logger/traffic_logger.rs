@@ -34,6 +34,28 @@ impl TrafficLogger {
         }
     }
 
+    /// Helper method to safely read config with better error messages
+    fn read_config(&self) -> DispaResult<LoggingConfig> {
+        let config = self.config.read()
+            .map_err(|e| crate::error::DispaError::internal(format!("Config lock poisoned: {}", e)))?
+            .clone();
+        Ok(config)
+    }
+
+    /// Helper method to safely read db_manager
+    fn read_db_manager(&self) -> DispaResult<Option<Arc<DatabaseManager>>> {
+        Ok(self.db_manager.read()
+            .map_err(|e| crate::error::DispaError::internal(format!("DB manager lock poisoned: {}", e)))?
+            .clone())
+    }
+
+    /// Helper method to safely read file_logger
+    fn read_file_logger(&self) -> DispaResult<Option<Arc<FileLogger>>> {
+        Ok(self.file_logger.read()
+            .map_err(|e| crate::error::DispaError::internal(format!("File logger lock poisoned: {}", e)))?
+            .clone())
+    }
+
     /// Initialize the traffic logger components
     pub async fn initialize(&mut self) -> DispaResult<()> {
         self.initialize_shared().await
@@ -41,7 +63,7 @@ impl TrafficLogger {
 
     /// Initialize shared resources (idempotent)
     pub async fn initialize_shared(&self) -> DispaResult<()> {
-        let config = self.config.read().unwrap().clone();
+        let config = self.read_config()?;
 
         if !config.enabled {
             info!("Traffic logging is disabled");
@@ -54,7 +76,9 @@ impl TrafficLogger {
                 if let Some(ref db_config) = config.database {
                     info!("Initializing database logging to: {}", db_config.url);
                     let db_manager = Arc::new(DatabaseManager::new(&db_config.url).await?);
-                    *self.db_manager.write().unwrap() = Some(db_manager);
+                    *self.db_manager.write()
+                        .map_err(|e| crate::error::DispaError::internal(format!("Failed to write db_manager lock: {}", e)))?
+                        = Some(db_manager);
                     info!("Database logging initialized successfully");
                 }
             }
