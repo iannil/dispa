@@ -32,7 +32,10 @@ impl ETagManager {
         let mut etag = String::with_capacity(66); // "0x" + 64 hex chars + quotes
         etag.push('"');
         for byte in hash {
-            write!(&mut etag, "{:02x}", byte).expect("Writing to string should not fail");
+            if write!(&mut etag, "{:02x}", byte).is_err() {
+                // This should never happen when writing to a String
+                return None;
+            }
         }
         etag.push('"');
 
@@ -157,24 +160,31 @@ impl ETagManager {
     }
 
     /// Create a 304 Not Modified response
-    pub fn create_not_modified_response(&self, original_headers: &HeaderMap) -> Response<Body> {
-        let mut response = Response::builder()
+    pub fn create_not_modified_response(
+        &self,
+        original_headers: &HeaderMap,
+    ) -> Option<Response<Body>> {
+        let response = Response::builder()
             .status(StatusCode::NOT_MODIFIED)
-            .body(Body::empty())
-            .expect("Creating NOT_MODIFIED response with valid values should not fail");
+            .body(Body::empty());
+
+        let mut response = match response {
+            Ok(resp) => resp,
+            Err(_) => return None,
+        };
 
         // Copy cacheable headers to 304 response
         self.copy_cacheable_headers(original_headers, response.headers_mut());
 
-        response
+        Some(response)
     }
 
     /// Create a 412 Precondition Failed response
-    pub fn create_precondition_failed_response(&self) -> Response<Body> {
+    pub fn create_precondition_failed_response(&self) -> Option<Response<Body>> {
         Response::builder()
             .status(StatusCode::PRECONDITION_FAILED)
             .body(Body::from("Precondition Failed"))
-            .expect("Creating PRECONDITION_FAILED response with valid values should not fail")
+            .ok()
     }
 
     /// Copy cacheable headers to 304 response
@@ -443,6 +453,8 @@ mod tests {
         original_headers.insert("custom-header", "should-not-copy".parse().unwrap()); // OK in tests - valid header value
 
         let response = etag_manager.create_not_modified_response(&original_headers);
+        assert!(response.is_some());
+        let response = response.unwrap();
 
         assert_eq!(response.status(), StatusCode::NOT_MODIFIED);
         assert!(response.headers().contains_key("etag"));

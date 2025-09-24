@@ -57,7 +57,8 @@ impl MfaValidator {
 
     /// Generate QR code data for TOTP setup
     pub fn generate_qr_data(&self, username: &str, secret: &str) -> String {
-        let issuer = self.config
+        let issuer = self
+            .config
             .as_ref()
             .map(|c| c.totp_issuer.as_str())
             .unwrap_or("Dispa");
@@ -223,6 +224,8 @@ mod tests {
         let secret = mfa.generate_totp_secret();
 
         assert_eq!(secret.len(), 32);
-        assert!(secret.chars().all(|c| "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567".contains(c)));
+        assert!(secret
+            .chars()
+            .all(|c| "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567".contains(c)));
     }
 }

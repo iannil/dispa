@@ -2,7 +2,7 @@ use crate::security::auth::config::{AdminRole, SessionConfig};
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime};
 use tokio::sync::RwLock;
 use tracing::{debug, info};
 
@@ -155,7 +155,10 @@ impl SessionManager {
                         // Use a default max attempts if not in session config
                         let lockout_duration = Duration::from_secs(15 * 60); // 15 minutes default
                         attempt.locked_until = Some(now + lockout_duration);
-                        info!("User {} locked out until {:?}", username, attempt.locked_until);
+                        info!(
+                            "User {} locked out until {:?}",
+                            username, attempt.locked_until
+                        );
                     }
                 }
             }

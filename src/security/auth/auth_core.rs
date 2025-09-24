@@ -1,4 +1,4 @@
-use crate::security::auth::config::{AdminAuthConfig, AdminRole, AdminUser};
+use crate::security::auth::config::{AdminAuthConfig, AdminRole};
 use base64::{engine::general_purpose, Engine as _};
 use hyper::{Body, Request, Response, StatusCode};
 use std::net::IpAddr;
@@ -15,7 +15,10 @@ pub enum AuthResult {
     /// Authentication failed
     Denied { reason: String },
     /// MFA verification required
-    MfaRequired { temp_token: String, username: String },
+    MfaRequired {
+        temp_token: String,
+        username: String,
+    },
     /// Rate limited
     RateLimited { retry_after: u64 },
 }
@@ -106,7 +109,10 @@ impl AuthCore {
         // Check allowed IPs
         if let Some(ref allowed_ips) = admin_config.allowed_ips {
             let client_ip_str = client_ip.to_string();
-            if !allowed_ips.iter().any(|ip| self.ip_matches(ip, &client_ip_str)) {
+            if !allowed_ips
+                .iter()
+                .any(|ip| self.ip_matches(ip, &client_ip_str))
+            {
                 warn!("Authentication attempt from disallowed IP: {}", client_ip);
                 return AuthResult::Denied {
                     reason: "IP not allowed".to_string(),
@@ -252,7 +258,7 @@ impl AuthCore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::security::auth::config::{AdminUser, AdminRole};
+    use crate::security::auth::config::{AdminRole, AdminUser};
 
     #[test]
     fn test_auth_result_is_allowed() {

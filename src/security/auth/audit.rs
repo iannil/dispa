@@ -27,10 +27,7 @@ impl AuditLogger {
             .expect("Time calculation should not fail")
             .as_secs();
 
-        let log_entry = format!(
-            "{} [{}] {}\n",
-            timestamp, event_type, details
-        );
+        let log_entry = format!("{} [{}] {}\n", timestamp, event_type, details);
 
         // Write to audit log file
         if let Err(e) = self.write_to_file(&config.log_file, &log_entry).await {
@@ -81,19 +78,28 @@ impl AuditLogger {
         self.log_event(
             "SESSION",
             &format!("user={} session={} event={}", username, session_id, event),
-        ).await;
+        )
+        .await;
     }
 
     /// Log MFA event
     pub async fn log_mfa_event(&self, username: &str, event: &str, success: bool) {
-        let event_type = if success { "MFA_SUCCESS" } else { "MFA_FAILURE" };
+        let event_type = if success {
+            "MFA_SUCCESS"
+        } else {
+            "MFA_FAILURE"
+        };
         let details = format!("user={} event={}", username, event);
         self.log_event(event_type, &details).await;
     }
 
     /// Log security alert
     pub async fn log_security_alert(&self, alert_type: &str, details: &str) {
-        self.log_event("SECURITY_ALERT", &format!("type={} {}", alert_type, details)).await;
+        self.log_event(
+            "SECURITY_ALERT",
+            &format!("type={} {}", alert_type, details),
+        )
+        .await;
     }
 
     /// Rotate log file if it exceeds maximum size
@@ -139,7 +145,8 @@ impl AuditLogger {
         let cutoff_time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("Time calculation should not fail")
-            .as_secs() - retention_seconds;
+            .as_secs()
+            - retention_seconds;
 
         // Find and remove old rotated log files
         if let Some(dir_path) = std::path::Path::new(&config.log_file).parent() {
@@ -155,7 +162,11 @@ impl AuditLogger {
                                 if let Ok(timestamp) = timestamp_str.parse::<u64>() {
                                     if timestamp < cutoff_time {
                                         if let Err(e) = std::fs::remove_file(entry.path()) {
-                                            error!("Failed to remove old log file {:?}: {}", entry.path(), e);
+                                            error!(
+                                                "Failed to remove old log file {:?}: {}",
+                                                entry.path(),
+                                                e
+                                            );
                                         } else {
                                             info!("Removed old audit log: {:?}", entry.path());
                                         }
@@ -196,7 +207,11 @@ mod tests {
 
     fn create_test_config() -> (AuditConfig, TempDir) {
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
-        let log_file = temp_dir.path().join("audit.log").to_string_lossy().to_string();
+        let log_file = temp_dir
+            .path()
+            .join("audit.log")
+            .to_string_lossy()
+            .to_string();
 
         let config = AuditConfig {
             enabled: true,
@@ -218,12 +233,16 @@ mod tests {
 
         // Test logging events
         logger.log_event("TEST_EVENT", "test details").await;
-        logger.log_successful_auth("testuser", "127.0.0.1", "basic").await;
-        logger.log_failed_auth("baduser", "192.168.1.1", "invalid password").await;
+        logger
+            .log_successful_auth("testuser", "127.0.0.1", "basic")
+            .await;
+        logger
+            .log_failed_auth("baduser", "192.168.1.1", "invalid password")
+            .await;
 
         // Verify log file was created and contains entries
-        let log_content = std::fs::read_to_string(&config.log_file)
-            .expect("Should be able to read log file");
+        let log_content =
+            std::fs::read_to_string(&config.log_file).expect("Should be able to read log file");
 
         assert!(log_content.contains("TEST_EVENT"));
         assert!(log_content.contains("AUTH_SUCCESS"));

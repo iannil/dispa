@@ -87,7 +87,7 @@ mod tests {
                 Response::builder()
                     .status(StatusCode::FORBIDDEN)
                     .body(Body::from("Blocked by plugin"))
-                    .unwrap() // OK in tests - valid request, // OK in tests - valid request
+                    .unwrap(), // OK in tests - valid request, // OK in tests - valid request
             )
         }
     }

@@ -169,7 +169,7 @@ impl Default for ConnectionCapacityConfig {
         Self {
             enabled: true,
             max_connections: 50000, // Increased from 10000 to 50000 for high-load scenarios
-            warning_threshold: 0.8,   // 80%
+            warning_threshold: 0.8, // 80%
             critical_threshold: 0.95, // 95%
         }
     }
@@ -180,9 +180,9 @@ impl Default for RequestRateCapacityConfig {
         Self {
             enabled: true,
             max_rps: 10000.0, // Increased from 1000 to 10000 RPS for high-throughput
-            warning_threshold: 0.8,   // 80%
+            warning_threshold: 0.8, // 80%
             critical_threshold: 0.95, // 95%
-            window_size: 60,          // 1 minute window
+            window_size: 60,  // 1 minute window
         }
     }
 }

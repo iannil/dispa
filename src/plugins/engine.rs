@@ -284,7 +284,9 @@ impl PluginEngine {
                                             Response::builder()
                                                 .status(500)
                                                 .body(Body::from("Plugin error"))
-                                                .expect("Building simple HTTP response should not fail"),
+                                                .expect(
+                                                    "Building simple HTTP response should not fail",
+                                                ),
                                         );
                                     }
                                     PluginErrorStrategy::Continue => {
@@ -752,7 +754,8 @@ mod tests {
             .await;
 
         // Check that only plugin2 ran
-        assert_eq!(resp.headers().get("X-Response-Plugin").unwrap(), "plugin2"); // OK in tests - header expected to exist
+        assert_eq!(resp.headers().get("X-Response-Plugin").unwrap(), "plugin2");
+        // OK in tests - header expected to exist
     }
 
     #[tokio::test]

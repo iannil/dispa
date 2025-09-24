@@ -268,7 +268,11 @@ async fn status_json_with_role(role: Option<String>) -> serde_json::Value {
             Err(_) => 0, // Lock poisoned, return default
         };
         let exclude_domains = match state.domain_config.read() {
-            Ok(config) => config.exclude_domains.as_ref().map(|v| v.len()).unwrap_or(0),
+            Ok(config) => config
+                .exclude_domains
+                .as_ref()
+                .map(|v| v.len())
+                .unwrap_or(0),
             Err(_) => 0, // Lock poisoned, return default
         };
         let summary = state.load_balancer.read().await.get_summary().await;

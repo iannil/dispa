@@ -75,7 +75,9 @@ impl EnhancedSecurityManager {
 
         // Try Basic auth
         if let Some((username, password)) = self.auth_core.extract_basic_auth(req) {
-            return self.authenticate_user_credentials(username, password, client_ip).await;
+            return self
+                .authenticate_user_credentials(username, password, client_ip)
+                .await;
         }
 
         // No authentication provided
@@ -92,9 +94,16 @@ impl EnhancedSecurityManager {
         client_ip: IpAddr,
     ) -> AuthResult {
         // Check if user or IP is locked out
-        if self.session_manager.is_user_locked(&username, &client_ip).await {
+        if self
+            .session_manager
+            .is_user_locked(&username, &client_ip)
+            .await
+        {
             self.audit_logger
-                .log_security_alert("LOCKED_OUT_ATTEMPT", &format!("user={} ip={}", username, client_ip))
+                .log_security_alert(
+                    "LOCKED_OUT_ATTEMPT",
+                    &format!("user={} ip={}", username, client_ip),
+                )
                 .await;
 
             return AuthResult::Denied {
@@ -103,15 +112,18 @@ impl EnhancedSecurityManager {
         }
 
         // Attempt authentication
-        let dummy_request = Request::builder().body(Body::empty())
+        let dummy_request = Request::builder()
+            .body(Body::empty())
             .expect("Creating dummy request should not fail");
 
-        let auth_result = self.auth_core
+        let auth_result = self
+            .auth_core
             .authenticate_user(&dummy_request, username.clone(), password, client_ip)
             .await;
 
         // Record the attempt
-        let success = auth_result.is_allowed() || matches!(auth_result, AuthResult::MfaRequired { .. });
+        let success =
+            auth_result.is_allowed() || matches!(auth_result, AuthResult::MfaRequired { .. });
         self.session_manager
             .record_auth_attempt(&username, client_ip, success)
             .await;
@@ -124,7 +136,8 @@ impl EnhancedSecurityManager {
                     .await;
 
                 // Create session
-                let session_id = self.session_manager
+                let session_id = self
+                    .session_manager
                     .create_session(&username, role, client_ip)
                     .await;
 
@@ -149,7 +162,10 @@ impl EnhancedSecurityManager {
             }
             AuthResult::RateLimited { .. } => {
                 self.audit_logger
-                    .log_security_alert("RATE_LIMITED", &format!("user={} ip={}", username, client_ip))
+                    .log_security_alert(
+                        "RATE_LIMITED",
+                        &format!("user={} ip={}", username, client_ip),
+                    )
                     .await;
 
                 auth_result
@@ -237,7 +253,9 @@ impl EnhancedSecurityManager {
 
     /// Log admin action
     pub async fn log_admin_action(&self, username: &str, action: &str, target: Option<&str>) {
-        self.audit_logger.log_admin_action(username, action, target).await;
+        self.audit_logger
+            .log_admin_action(username, action, target)
+            .await;
     }
 }
 
@@ -282,7 +300,8 @@ mod tests {
         let manager = EnhancedSecurityManager::new(config);
         let client_ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
 
-        let req = Request::builder().body(Body::empty())
+        let req = Request::builder()
+            .body(Body::empty())
             .expect("Creating request should not fail");
 
         let result = manager.authenticate_admin_request(&req, client_ip).await;
@@ -297,7 +316,8 @@ mod tests {
         let manager = EnhancedSecurityManager::new(config);
         let client_ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
 
-        let req = Request::builder().body(Body::empty())
+        let req = Request::builder()
+            .body(Body::empty())
             .expect("Creating request should not fail");
 
         let result = manager.authenticate_admin_request(&req, client_ip).await;
@@ -309,8 +329,8 @@ mod tests {
     #[tokio::test]
     async fn test_password_hashing() {
         let password = "test123";
-        let hash = EnhancedSecurityManager::hash_password(password)
-            .expect("Password hashing should work");
+        let hash =
+            EnhancedSecurityManager::hash_password(password).expect("Password hashing should work");
 
         assert!(bcrypt::verify(password, &hash).expect("Verification should work"));
         assert!(!bcrypt::verify("wrong", &hash).expect("Verification should work"));

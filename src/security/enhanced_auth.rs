@@ -32,7 +32,7 @@ pub type SecurityManager = EnhancedSecurityManager;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::security::auth::config::{AdminUser, AdminRole};
+    use crate::security::auth::config::{AdminRole, AdminUser};
     use std::net::{IpAddr, Ipv4Addr};
 
     #[tokio::test]

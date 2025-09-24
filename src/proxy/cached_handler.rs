@@ -138,7 +138,9 @@ impl CachedProxyHandler {
             .traffic_logger
             .log_request(
                 request_id,
-                "127.0.0.1:0".parse().expect("Default localhost address parsing should not fail"),
+                "127.0.0.1:0"
+                    .parse()
+                    .expect("Default localhost address parsing should not fail"),
                 &host,
                 method.as_ref(),
                 &path,
@@ -190,7 +192,13 @@ impl CachedProxyHandler {
                         return Some(
                             Response::builder()
                                 .status(StatusCode::NOT_MODIFIED)
-                                .header("ETag", cached_entry.etag.as_ref().expect("Cached entry should have ETag"))
+                                .header(
+                                    "ETag",
+                                    cached_entry
+                                        .etag
+                                        .as_ref()
+                                        .expect("Cached entry should have ETag"),
+                                )
                                 .header("X-Cache", "HIT-CONDITIONAL")
                                 .body(Body::empty())
                                 .expect("Building 304 response should not fail"),

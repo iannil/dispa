@@ -38,4 +38,9 @@
 pub mod health_check; // 健康检查模块，提供并发健康监控
 pub mod load_balancer; // 负载均衡器实现，支持多种算法
 
+// New modular components
+pub mod algorithms; // 负载均衡算法实现
+pub mod metrics; // 指标收集和统计
+pub mod state; // 负载均衡器状态管理
+
 pub use load_balancer::LoadBalancer;

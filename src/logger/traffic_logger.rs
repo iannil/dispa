@@ -36,23 +36,35 @@ impl TrafficLogger {
 
     /// Helper method to safely read config with better error messages
     fn read_config(&self) -> DispaResult<LoggingConfig> {
-        let config = self.config.read()
-            .map_err(|e| crate::error::DispaError::internal(format!("Config lock poisoned: {}", e)))?
+        let config = self
+            .config
+            .read()
+            .map_err(|e| {
+                crate::error::DispaError::internal(format!("Config lock poisoned: {}", e))
+            })?
             .clone();
         Ok(config)
     }
 
     /// Helper method to safely read db_manager
     fn read_db_manager(&self) -> DispaResult<Option<Arc<DatabaseManager>>> {
-        Ok(self.db_manager.read()
-            .map_err(|e| crate::error::DispaError::internal(format!("DB manager lock poisoned: {}", e)))?
+        Ok(self
+            .db_manager
+            .read()
+            .map_err(|e| {
+                crate::error::DispaError::internal(format!("DB manager lock poisoned: {}", e))
+            })?
             .clone())
     }
 
     /// Helper method to safely read file_logger
     fn read_file_logger(&self) -> DispaResult<Option<Arc<FileLogger>>> {
-        Ok(self.file_logger.read()
-            .map_err(|e| crate::error::DispaError::internal(format!("File logger lock poisoned: {}", e)))?
+        Ok(self
+            .file_logger
+            .read()
+            .map_err(|e| {
+                crate::error::DispaError::internal(format!("File logger lock poisoned: {}", e))
+            })?
             .clone())
     }
 
@@ -76,9 +88,12 @@ impl TrafficLogger {
                 if let Some(ref db_config) = config.database {
                     info!("Initializing database logging to: {}", db_config.url);
                     let db_manager = Arc::new(DatabaseManager::new(&db_config.url).await?);
-                    *self.db_manager.write()
-                        .map_err(|e| crate::error::DispaError::internal(format!("Failed to write db_manager lock: {}", e)))?
-                        = Some(db_manager);
+                    *self.db_manager.write().map_err(|e| {
+                        crate::error::DispaError::internal(format!(
+                            "Failed to write db_manager lock: {}",
+                            e
+                        ))
+                    })? = Some(db_manager);
                     info!("Database logging initialized successfully");
                 }
             }
@@ -91,9 +106,12 @@ impl TrafficLogger {
                 let file_logger = Arc::new(FileLogger::new(file_config.clone()));
                 file_logger.initialize().await?;
                 file_logger.ensure_csv_header().await?;
-                *self.file_logger.write()
-                    .map_err(|e| crate::error::DispaError::internal(format!("Failed to write file_logger lock: {}", e)))?
-                    = Some(file_logger);
+                *self.file_logger.write().map_err(|e| {
+                    crate::error::DispaError::internal(format!(
+                        "Failed to write file_logger lock: {}",
+                        e
+                    ))
+                })? = Some(file_logger);
                 info!("File logging initialized successfully");
             }
         }
@@ -316,20 +334,20 @@ impl TrafficLogger {
         info!("Reconfiguring traffic logger");
 
         // Update config
-        *self.config.write()
-            .map_err(|e| crate::error::DispaError::internal(format!("Failed to write config lock: {}", e)))?
-            = new_config.clone();
+        *self.config.write().map_err(|e| {
+            crate::error::DispaError::internal(format!("Failed to write config lock: {}", e))
+        })? = new_config.clone();
 
         // Stop existing cleanup task
         self.stop_cleanup_task().await;
 
         // Clear existing loggers
-        *self.db_manager.write()
-            .map_err(|e| crate::error::DispaError::internal(format!("Failed to write db_manager lock: {}", e)))?
-            = None;
-        *self.file_logger.write()
-            .map_err(|e| crate::error::DispaError::internal(format!("Failed to write file_logger lock: {}", e)))?
-            = None;
+        *self.db_manager.write().map_err(|e| {
+            crate::error::DispaError::internal(format!("Failed to write db_manager lock: {}", e))
+        })? = None;
+        *self.file_logger.write().map_err(|e| {
+            crate::error::DispaError::internal(format!("Failed to write file_logger lock: {}", e))
+        })? = None;
 
         // Reinitialize with new config
         self.initialize_shared().await?;
