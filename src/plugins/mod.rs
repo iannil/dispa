@@ -67,7 +67,7 @@ mod tests {
             plugins: vec![],
             apply_before_domain_match: true,
         };
-        PluginEngine::new(&config).unwrap()
+        PluginEngine::new(&config).unwrap() // OK in tests - valid config
     }
 
     fn engine_with_request_entries(_entries: Vec<engine::PluginRequestEntry>) -> PluginEngine {
@@ -87,7 +87,7 @@ mod tests {
                 Response::builder()
                     .status(StatusCode::FORBIDDEN)
                     .body(Body::from("Blocked by plugin"))
-                    .unwrap(),
+                    .unwrap() // OK in tests - valid request, // OK in tests - valid request
             )
         }
     }
@@ -102,7 +102,7 @@ mod tests {
                 .method(Method::GET)
                 .uri("http://example.com/test")
                 .body(Body::empty())
-                .unwrap();
+                .unwrap(); // OK in tests - valid request
 
             let result = engine.apply_request(&mut req).await;
             assert!(matches!(result, PluginResult::Continue));
@@ -133,17 +133,17 @@ mod tests {
                 apply_before_domain_match: true,
             };
 
-            let engine = PluginEngine::new(&config).unwrap();
+            let engine = PluginEngine::new(&config).unwrap(); // OK in tests - valid config
 
             let mut req = Request::builder()
                 .method(Method::GET)
                 .uri("http://example.com/test")
                 .body(Body::empty())
-                .unwrap();
+                .unwrap(); // OK in tests - valid request
 
             let result = engine.apply_request(&mut req).await;
             assert!(matches!(result, PluginResult::Continue));
-            assert_eq!(req.headers().get("X-Test").unwrap(), "test-value");
+            assert_eq!(req.headers().get("X-Test").unwrap(), "test-value"); // OK in tests - header expected to exist
         })
         .await
         .expect("test_plugin_engine_with_header_injector timed out");
@@ -158,7 +158,7 @@ mod tests {
                 apply_before_domain_match: false,
             };
 
-            let engine = PluginEngine::new(&config).unwrap();
+            let engine = PluginEngine::new(&config).unwrap(); // OK in tests - valid config
             assert!(!engine.apply_before_domain_match());
         })
         .await
@@ -192,7 +192,7 @@ mod tests {
                 apply_before_domain_match: true,
             };
 
-            let engine = PluginEngine::new(&config).unwrap();
+            let engine = PluginEngine::new(&config).unwrap(); // OK in tests - valid config
             let request_names = engine.request_plugin_names();
             let response_names = engine.response_plugin_names();
 
@@ -224,7 +224,7 @@ mod tests {
                 apply_before_domain_match: true,
             };
 
-            let engine = PluginEngine::new(&config).unwrap();
+            let engine = PluginEngine::new(&config).unwrap(); // OK in tests - valid config
             let request_names = engine.request_plugin_names();
             let response_names = engine.response_plugin_names();
 
@@ -253,7 +253,7 @@ mod tests {
                 apply_before_domain_match: true,
             };
 
-            let engine = PluginEngine::new(&config).unwrap();
+            let engine = PluginEngine::new(&config).unwrap(); // OK in tests - valid config
             assert!(engine.request_plugin_names().is_empty());
         })
         .await
@@ -278,7 +278,7 @@ mod tests {
                 apply_before_domain_match: true,
             };
 
-            let engine = PluginEngine::new(&config).unwrap();
+            let engine = PluginEngine::new(&config).unwrap(); // OK in tests - valid config
             assert!(engine.request_plugin_names().is_empty());
         })
         .await
@@ -297,18 +297,18 @@ mod tests {
             }
         });
 
-        let injector = builtin::HeaderInjector::from_config("test", Some(&config)).unwrap();
+        let injector = builtin::HeaderInjector::from_config("test", Some(&config)).unwrap(); // OK in tests - valid config
 
         let mut req = Request::builder()
             .method(Method::GET)
             .uri("http://example.com")
             .body(Body::empty())
-            .unwrap();
+            .unwrap(); // OK in tests - valid request
 
         let result = injector.on_request(&mut req);
         assert!(matches!(result, PluginResult::Continue));
-        assert_eq!(req.headers().get("X-Custom").unwrap(), "custom-value");
-        assert_eq!(req.headers().get("X-Another").unwrap(), "another-value");
+        assert_eq!(req.headers().get("X-Custom").unwrap(), "custom-value"); // OK in tests - header expected to exist
+        assert_eq!(req.headers().get("X-Another").unwrap(), "another-value"); // OK in tests - header expected to exist
     }
 
     #[test]
@@ -318,7 +318,7 @@ mod tests {
             "paths": ["/blocked"]
         });
 
-        let blocklist = builtin::Blocklist::from_config("test", Some(&config)).unwrap();
+        let blocklist = builtin::Blocklist::from_config("test", Some(&config)).unwrap(); // OK in tests - valid config
 
         // Test blocked host
         let mut req = Request::builder()
@@ -326,7 +326,7 @@ mod tests {
             .uri("http://blocked.com/test")
             .header("host", "blocked.com")
             .body(Body::empty())
-            .unwrap();
+            .unwrap(); // OK in tests - valid request
 
         let result = blocklist.on_request(&mut req);
         assert!(matches!(result, PluginResult::ShortCircuit(_)));
@@ -337,7 +337,7 @@ mod tests {
             .uri("http://example.com/blocked/test")
             .header("host", "example.com")
             .body(Body::empty())
-            .unwrap();
+            .unwrap(); // OK in tests - valid request
 
         let result = blocklist.on_request(&mut req);
         assert!(matches!(result, PluginResult::ShortCircuit(_)));
@@ -348,7 +348,7 @@ mod tests {
             .uri("http://example.com/allowed")
             .header("host", "example.com")
             .body(Body::empty())
-            .unwrap();
+            .unwrap(); // OK in tests - valid request
 
         let result = blocklist.on_request(&mut req);
         assert!(matches!(result, PluginResult::Continue));

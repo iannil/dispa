@@ -203,7 +203,7 @@ impl PluginEngine {
                                     Response::builder()
                                         .status(500)
                                         .body(Body::from("Plugin error"))
-                                        .unwrap(),
+                                        .expect("Building simple HTTP response should not fail"),
                                 );
                             }
                             PluginErrorStrategy::Continue => {
@@ -284,7 +284,7 @@ impl PluginEngine {
                                             Response::builder()
                                                 .status(500)
                                                 .body(Body::from("Plugin error"))
-                                                .unwrap(),
+                                                .expect("Building simple HTTP response should not fail"),
                                         );
                                     }
                                     PluginErrorStrategy::Continue => {
@@ -385,7 +385,7 @@ mod tests {
             apply_before_domain_match: true,
         };
 
-        let engine = PluginEngine::new(&config).unwrap();
+        let engine = PluginEngine::new(&config).unwrap(); // OK in tests - valid config
         assert!(engine.request_plugins.is_empty());
         assert!(engine.response_plugins.is_empty());
         assert!(engine.apply_before_domain_match());
@@ -401,7 +401,7 @@ mod tests {
             apply_before_domain_match: true,
         };
 
-        let engine = PluginEngine::new(&config).unwrap();
+        let engine = PluginEngine::new(&config).unwrap(); // OK in tests - valid config
         assert!(engine.request_plugins.is_empty());
         assert!(engine.response_plugins.is_empty());
     }
@@ -417,7 +417,7 @@ mod tests {
             apply_before_domain_match: false,
         };
 
-        let engine = PluginEngine::new(&config).unwrap();
+        let engine = PluginEngine::new(&config).unwrap(); // OK in tests - valid config
         assert_eq!(engine.request_plugins.len(), 1);
         assert_eq!(engine.response_plugins.len(), 1);
         assert!(!engine.apply_before_domain_match());
@@ -441,7 +441,7 @@ mod tests {
             apply_before_domain_match: true,
         };
 
-        let engine = PluginEngine::new(&config).unwrap();
+        let engine = PluginEngine::new(&config).unwrap(); // OK in tests - valid config
         assert_eq!(engine.request_plugins.len(), 3); // injector1, injector3, blocklist1
         assert_eq!(engine.response_plugins.len(), 2); // injector2, injector3
 
@@ -468,7 +468,7 @@ mod tests {
             apply_before_domain_match: true,
         };
 
-        let engine = PluginEngine::new(&config).unwrap();
+        let engine = PluginEngine::new(&config).unwrap(); // OK in tests - valid config
         assert_eq!(engine.request_plugins.len(), 1);
         assert_eq!(engine.response_plugins.len(), 1);
 
@@ -496,7 +496,7 @@ mod tests {
             apply_before_domain_match: true,
         };
 
-        let engine = PluginEngine::new(&config).unwrap();
+        let engine = PluginEngine::new(&config).unwrap(); // OK in tests - valid config
         assert_eq!(engine.request_plugins.len(), 1);
         assert_eq!(engine.request_plugin_names(), vec!["override-test"]);
     }
@@ -512,7 +512,7 @@ mod tests {
             apply_before_domain_match: true,
         };
 
-        let engine = PluginEngine::new(&config).unwrap();
+        let engine = PluginEngine::new(&config).unwrap(); // OK in tests - valid config
         assert_eq!(engine.request_plugins.len(), 1);
         assert_eq!(engine.response_plugins.len(), 0); // Blocklist doesn't support response
     }
@@ -550,7 +550,7 @@ mod tests {
             apply_before_domain_match: true,
         };
 
-        let engine = PluginEngine::new(&config).unwrap();
+        let engine = PluginEngine::new(&config).unwrap(); // OK in tests - valid config
         assert!(engine.request_plugins.is_empty());
         assert!(engine.response_plugins.is_empty());
     }
@@ -573,7 +573,7 @@ mod tests {
 
         let result = PluginEngine::new(&config);
         assert!(result.is_err());
-        let error_msg = result.err().unwrap().to_string();
+        let error_msg = result.err().unwrap().to_string(); // OK in tests - error expected
         assert!(error_msg.contains("wasm-plugin' feature"));
     }
 
@@ -595,7 +595,7 @@ mod tests {
 
         let result = PluginEngine::new(&config);
         assert!(result.is_err());
-        let error_msg = result.err().unwrap().to_string();
+        let error_msg = result.err().unwrap().to_string(); // OK in tests - error expected
         assert!(error_msg.contains("cmd-plugin' feature"));
     }
 
@@ -607,19 +607,19 @@ mod tests {
             apply_before_domain_match: true,
         };
 
-        let engine = PluginEngine::new(&config).unwrap();
+        let engine = PluginEngine::new(&config).unwrap(); // OK in tests - valid config
         let mut req = Request::builder()
             .method(Method::GET)
             .uri("http://example.com/test")
             .body(Body::empty())
-            .unwrap();
+            .unwrap(); // OK in tests - valid request
 
         let result = engine.apply_request(&mut req).await;
         assert!(matches!(result, PluginResult::Continue));
 
         // Check that headers were added
-        assert_eq!(req.headers().get("X-Test").unwrap(), "test-value");
-        assert_eq!(req.headers().get("X-Plugin").unwrap(), "test");
+        assert_eq!(req.headers().get("X-Test").unwrap(), "test-value"); // OK in tests - header expected to exist
+        assert_eq!(req.headers().get("X-Plugin").unwrap(), "test"); // OK in tests - header expected to exist
     }
 
     #[tokio::test]
@@ -630,13 +630,13 @@ mod tests {
             apply_before_domain_match: true,
         };
 
-        let engine = PluginEngine::new(&config).unwrap();
+        let engine = PluginEngine::new(&config).unwrap(); // OK in tests - valid config
         let mut req = Request::builder()
             .method(Method::GET)
             .uri("http://blocked.com/test")
             .header("host", "blocked.com")
             .body(Body::empty())
-            .unwrap();
+            .unwrap(); // OK in tests - valid request
 
         let result = engine.apply_request(&mut req).await;
         match result {
@@ -655,20 +655,20 @@ mod tests {
             apply_before_domain_match: true,
         };
 
-        let engine = PluginEngine::new(&config).unwrap();
+        let engine = PluginEngine::new(&config).unwrap(); // OK in tests - valid config
         let mut resp = Response::builder()
             .status(StatusCode::OK)
             .body(Body::from("test body"))
-            .unwrap();
+            .unwrap(); // OK in tests - valid response
 
         engine.apply_response(&mut resp).await;
 
         // Check that headers were added
         assert_eq!(
-            resp.headers().get("X-Response-Test").unwrap(),
+            resp.headers().get("X-Response-Test").unwrap(), // OK in tests - header expected to exist
             "response-value"
         );
-        assert_eq!(resp.headers().get("X-Response-Plugin").unwrap(), "test");
+        assert_eq!(resp.headers().get("X-Response-Plugin").unwrap(), "test"); // OK in tests - header expected to exist
     }
 
     #[tokio::test]
@@ -683,12 +683,12 @@ mod tests {
             apply_before_domain_match: true,
         };
 
-        let engine = PluginEngine::new(&config).unwrap();
+        let engine = PluginEngine::new(&config).unwrap(); // OK in tests - valid config
         let mut req = Request::builder()
             .method(Method::GET)
             .uri("http://example.com/test")
             .body(Body::empty())
-            .unwrap();
+            .unwrap(); // OK in tests - valid request
 
         // Apply only plugin1 and plugin3
         let result = engine
@@ -697,7 +697,7 @@ mod tests {
         assert!(matches!(result, PluginResult::Continue));
 
         // Check that only the specified plugins ran
-        assert_eq!(req.headers().get("X-Plugin").unwrap(), "plugin3"); // Last one wins
+        assert_eq!(req.headers().get("X-Plugin").unwrap(), "plugin3"); // OK in tests - header expected to exist (last one wins)
         assert!(req.headers().get("X-Test").is_some());
     }
 
@@ -712,12 +712,12 @@ mod tests {
             apply_before_domain_match: true,
         };
 
-        let engine = PluginEngine::new(&config).unwrap();
+        let engine = PluginEngine::new(&config).unwrap(); // OK in tests - valid config
         let mut req = Request::builder()
             .method(Method::GET)
             .uri("http://example.com/test")
             .body(Body::empty())
-            .unwrap();
+            .unwrap(); // OK in tests - valid request
 
         // Try to apply non-existent plugin
         let result = engine
@@ -740,11 +740,11 @@ mod tests {
             apply_before_domain_match: true,
         };
 
-        let engine = PluginEngine::new(&config).unwrap();
+        let engine = PluginEngine::new(&config).unwrap(); // OK in tests - valid config
         let mut resp = Response::builder()
             .status(StatusCode::OK)
             .body(Body::from("test body"))
-            .unwrap();
+            .unwrap(); // OK in tests - valid response
 
         // Apply only plugin2
         engine
@@ -752,7 +752,7 @@ mod tests {
             .await;
 
         // Check that only plugin2 ran
-        assert_eq!(resp.headers().get("X-Response-Plugin").unwrap(), "plugin2");
+        assert_eq!(resp.headers().get("X-Response-Plugin").unwrap(), "plugin2"); // OK in tests - header expected to exist
     }
 
     #[tokio::test]
@@ -766,11 +766,11 @@ mod tests {
             apply_before_domain_match: true,
         };
 
-        let engine = PluginEngine::new(&config).unwrap();
+        let engine = PluginEngine::new(&config).unwrap(); // OK in tests - valid config
         let mut resp = Response::builder()
             .status(StatusCode::OK)
             .body(Body::from("test body"))
-            .unwrap();
+            .unwrap(); // OK in tests - valid response
 
         // Try to apply non-existent plugin
         engine
@@ -795,7 +795,7 @@ mod tests {
             apply_before_domain_match: true,
         };
 
-        let engine = PluginEngine::new(&config).unwrap();
+        let engine = PluginEngine::new(&config).unwrap(); // OK in tests - valid config
         assert_eq!(engine.request_plugins.len(), 2);
 
         // Check error strategies are correctly set
@@ -821,7 +821,7 @@ mod tests {
             apply_before_domain_match: true,
         };
 
-        let engine = PluginEngine::new(&config).unwrap();
+        let engine = PluginEngine::new(&config).unwrap(); // OK in tests - valid config
 
         // Check request index
         assert!(engine.request_index.contains_key("first"));
@@ -846,7 +846,7 @@ mod tests {
             apply_before_domain_match: true,
         };
 
-        let engine = PluginEngine::new(&config).unwrap();
+        let engine = PluginEngine::new(&config).unwrap(); // OK in tests - valid config
 
         let req_names = engine.request_plugin_names();
         let resp_names = engine.response_plugin_names();
@@ -881,7 +881,7 @@ mod tests {
         };
 
         // Should still create engine successfully with empty config
-        let engine = PluginEngine::new(&config).unwrap();
+        let engine = PluginEngine::new(&config).unwrap(); // OK in tests - valid config
         assert_eq!(engine.request_plugins.len(), 1);
     }
 
@@ -900,7 +900,7 @@ mod tests {
             apply_before_domain_match: true,
         };
 
-        let engine = PluginEngine::new(&config).unwrap();
+        let engine = PluginEngine::new(&config).unwrap(); // OK in tests - valid config
         assert_eq!(engine.request_plugins.len(), 1);
     }
 
@@ -937,17 +937,17 @@ mod tests {
             apply_before_domain_match: true,
         };
 
-        let engine = PluginEngine::new(&config).unwrap();
+        let engine = PluginEngine::new(&config).unwrap(); // OK in tests - valid config
         let mut req = Request::builder()
             .method(Method::GET)
             .uri("http://example.com/test")
             .body(Body::empty())
-            .unwrap();
+            .unwrap(); // OK in tests - valid request
 
         let result = engine.apply_request(&mut req).await;
         assert!(matches!(result, PluginResult::Continue));
 
         // Last plugin should win for the same header
-        assert_eq!(req.headers().get("X-Order").unwrap(), "second");
+        assert_eq!(req.headers().get("X-Order").unwrap(), "second"); // OK in tests - header expected to exist
     }
 }

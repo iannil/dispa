@@ -138,7 +138,7 @@ impl RequestPlugin for Blocklist {
                     Response::builder()
                         .status(403)
                         .body(Body::from("Blocked by host filter"))
-                        .unwrap(),
+                        .expect("Building simple HTTP response should not fail"),
                 );
             }
         }
@@ -154,7 +154,7 @@ impl RequestPlugin for Blocklist {
                 Response::builder()
                     .status(403)
                     .body(Body::from("Blocked by path filter"))
-                    .unwrap(),
+                    .expect("Building simple HTTP response should not fail"),
             );
         }
 
@@ -338,7 +338,7 @@ impl RequestPlugin for CommandPlugin {
             .method(method)
             .uri(uri)
             .body(Body::empty())
-            .unwrap();
+            .expect("Building request with valid method and URI should not fail");
 
         // Copy headers to the new request
         let mut req_with_headers = req_for_cmd;
@@ -394,7 +394,7 @@ mod tests {
 
     #[test]
     fn test_header_injector_creation_empty_config() {
-        let injector = HeaderInjector::from_config("test", None).unwrap();
+        let injector = HeaderInjector::from_config("test", None).unwrap(); // OK in tests - valid config
         assert_eq!(RequestPlugin::name(&injector), "test");
         assert!(injector.req_headers.is_empty());
         assert!(injector.resp_headers.is_empty());
@@ -412,7 +412,7 @@ mod tests {
             }
         });
 
-        let injector = HeaderInjector::from_config("test", Some(&config)).unwrap();
+        let injector = HeaderInjector::from_config("test", Some(&config)).unwrap(); // OK in tests - valid config
         assert_eq!(RequestPlugin::name(&injector), "test");
         assert_eq!(injector.req_headers.len(), 2);
         assert_eq!(injector.resp_headers.len(), 1);
@@ -441,19 +441,19 @@ mod tests {
             }
         });
 
-        let injector = HeaderInjector::from_config("test", Some(&config)).unwrap();
+        let injector = HeaderInjector::from_config("test", Some(&config)).unwrap(); // OK in tests - valid config
         let mut req = Request::builder()
             .method(Method::GET)
             .uri("http://example.com/test")
             .body(Body::empty())
-            .unwrap();
+            .unwrap(); // OK in tests - valid request // OK in tests - valid request
 
         let result = injector.on_request(&mut req);
         assert!(matches!(result, PluginResult::Continue));
 
         // Check that headers were added
-        assert_eq!(req.headers().get("X-Test").unwrap(), "test-value");
-        assert_eq!(req.headers().get("User-Agent").unwrap(), "DispaProxy/1.0");
+        assert_eq!(req.headers().get("X-Test").unwrap(), "test-value"); // OK in tests - header expected to exist
+        assert_eq!(req.headers().get("User-Agent").unwrap(), "DispaProxy/1.0"); // OK in tests - header expected to exist
     }
 
     #[test]
@@ -465,18 +465,18 @@ mod tests {
             }
         });
 
-        let injector = HeaderInjector::from_config("test", Some(&config)).unwrap();
+        let injector = HeaderInjector::from_config("test", Some(&config)).unwrap(); // OK in tests - valid config
         let mut resp = Response::builder()
             .status(StatusCode::OK)
             .body(Body::from("test body"))
-            .unwrap();
+            .unwrap(); // OK in tests - valid response
 
         injector.on_response(&mut resp);
 
         // Check that headers were added
-        assert_eq!(resp.headers().get("X-Powered-By").unwrap(), "Dispa");
+        assert_eq!(resp.headers().get("X-Powered-By").unwrap(), "Dispa"); // OK in tests - header expected to exist
         assert_eq!(
-            resp.headers().get("X-Custom-Response").unwrap(),
+            resp.headers().get("X-Custom-Response").unwrap(), // OK in tests - header expected to exist
             "response-header"
         );
     }
@@ -491,25 +491,25 @@ mod tests {
             }
         });
 
-        let injector = HeaderInjector::from_config("test", Some(&config)).unwrap();
+        let injector = HeaderInjector::from_config("test", Some(&config)).unwrap(); // OK in tests - valid config
         let mut req = Request::builder()
             .method(Method::GET)
             .uri("http://example.com/test")
             .body(Body::empty())
-            .unwrap();
+            .unwrap(); // OK in tests - valid request // OK in tests - valid request
 
         let result = injector.on_request(&mut req);
         assert!(matches!(result, PluginResult::Continue));
 
         // Only valid header should be present
-        assert_eq!(req.headers().get("Valid-Header").unwrap(), "valid-value");
+        assert_eq!(req.headers().get("Valid-Header").unwrap(), "valid-value"); // OK in tests - header expected to exist
         assert!(req.headers().get("").is_none());
         assert!(req.headers().get("Invalid\nHeader").is_none());
     }
 
     #[test]
     fn test_blocklist_creation_empty_config() {
-        let blocklist = Blocklist::from_config("test", None).unwrap();
+        let blocklist = Blocklist::from_config("test", None).unwrap(); // OK in tests - valid config
         assert_eq!(blocklist.name(), "test");
         assert!(blocklist.hosts.is_empty());
         assert!(blocklist.paths.is_empty());
@@ -522,7 +522,7 @@ mod tests {
             "paths": ["/admin", "/private"]
         });
 
-        let blocklist = Blocklist::from_config("test", Some(&config)).unwrap();
+        let blocklist = Blocklist::from_config("test", Some(&config)).unwrap(); // OK in tests - valid config
         assert_eq!(blocklist.name(), "test");
         assert_eq!(blocklist.hosts.len(), 2);
         assert_eq!(blocklist.paths.len(), 2);
@@ -539,7 +539,7 @@ mod tests {
             "hosts": ["blocked.com", "evil.example.com"]
         });
 
-        let blocklist = Blocklist::from_config("test", Some(&config)).unwrap();
+        let blocklist = Blocklist::from_config("test", Some(&config)).unwrap(); // OK in tests - valid config
 
         // Test blocked host
         let mut req = Request::builder()
@@ -547,7 +547,7 @@ mod tests {
             .uri("http://blocked.com/test")
             .header("host", "blocked.com")
             .body(Body::empty())
-            .unwrap();
+            .unwrap(); // OK in tests - valid request
 
         let result = blocklist.on_request(&mut req);
         match result {
@@ -563,7 +563,7 @@ mod tests {
             .uri("http://allowed.com/test")
             .header("host", "allowed.com")
             .body(Body::empty())
-            .unwrap();
+            .unwrap(); // OK in tests - valid request
 
         let result = blocklist.on_request(&mut req);
         assert!(matches!(result, PluginResult::Continue));
@@ -575,7 +575,7 @@ mod tests {
             "paths": ["/admin", "/private"]
         });
 
-        let blocklist = Blocklist::from_config("test", Some(&config)).unwrap();
+        let blocklist = Blocklist::from_config("test", Some(&config)).unwrap(); // OK in tests - valid config
 
         // Test blocked path
         let mut req = Request::builder()
@@ -583,7 +583,7 @@ mod tests {
             .uri("http://example.com/admin/users")
             .header("host", "example.com")
             .body(Body::empty())
-            .unwrap();
+            .unwrap(); // OK in tests - valid request
 
         let result = blocklist.on_request(&mut req);
         match result {
@@ -599,7 +599,7 @@ mod tests {
             .uri("http://example.com/public/info")
             .header("host", "example.com")
             .body(Body::empty())
-            .unwrap();
+            .unwrap(); // OK in tests - valid request
 
         let result = blocklist.on_request(&mut req);
         assert!(matches!(result, PluginResult::Continue));
@@ -611,7 +611,7 @@ mod tests {
             "hosts": ["evil"]
         });
 
-        let blocklist = Blocklist::from_config("test", Some(&config)).unwrap();
+        let blocklist = Blocklist::from_config("test", Some(&config)).unwrap(); // OK in tests - valid config
 
         // Should block hosts containing "evil"
         let mut req = Request::builder()
@@ -619,7 +619,7 @@ mod tests {
             .uri("http://evil.example.com/test")
             .header("host", "evil.example.com")
             .body(Body::empty())
-            .unwrap();
+            .unwrap(); // OK in tests - valid request
 
         let result = blocklist.on_request(&mut req);
         match result {
@@ -636,7 +636,7 @@ mod tests {
             "paths": ["admin"]
         });
 
-        let blocklist = Blocklist::from_config("test", Some(&config)).unwrap();
+        let blocklist = Blocklist::from_config("test", Some(&config)).unwrap(); // OK in tests - valid config
 
         // Should block paths containing "admin"
         let mut req = Request::builder()
@@ -644,7 +644,7 @@ mod tests {
             .uri("http://example.com/user/admin/settings")
             .header("host", "example.com")
             .body(Body::empty())
-            .unwrap();
+            .unwrap(); // OK in tests - valid request
 
         let result = blocklist.on_request(&mut req);
         match result {
@@ -661,14 +661,14 @@ mod tests {
             "hosts": ["blocked.com"]
         });
 
-        let blocklist = Blocklist::from_config("test", Some(&config)).unwrap();
+        let blocklist = Blocklist::from_config("test", Some(&config)).unwrap(); // OK in tests - valid config
 
         // Request without host header should not be blocked by host filter
         let mut req = Request::builder()
             .method(Method::GET)
             .uri("http://blocked.com/test")
             .body(Body::empty())
-            .unwrap();
+            .unwrap(); // OK in tests - valid request
 
         let result = blocklist.on_request(&mut req);
         assert!(matches!(result, PluginResult::Continue));
@@ -681,7 +681,7 @@ mod tests {
             "paths": ["/admin"]
         });
 
-        let blocklist = Blocklist::from_config("test", Some(&config)).unwrap();
+        let blocklist = Blocklist::from_config("test", Some(&config)).unwrap(); // OK in tests - valid config
 
         // Test host blocking takes precedence
         let mut req = Request::builder()
@@ -689,7 +689,7 @@ mod tests {
             .uri("http://blocked.com/public")
             .header("host", "blocked.com")
             .body(Body::empty())
-            .unwrap();
+            .unwrap(); // OK in tests - valid request
 
         let result = blocklist.on_request(&mut req);
         match result {
@@ -705,7 +705,7 @@ mod tests {
             .uri("http://allowed.com/admin/users")
             .header("host", "allowed.com")
             .body(Body::empty())
-            .unwrap();
+            .unwrap(); // OK in tests - valid request
 
         let result = blocklist.on_request(&mut req);
         match result {
@@ -724,7 +724,7 @@ mod tests {
             "paths": ["/valid", true, ["nested", "array"], 456]
         });
 
-        let blocklist = Blocklist::from_config("test", Some(&config)).unwrap();
+        let blocklist = Blocklist::from_config("test", Some(&config)).unwrap(); // OK in tests - valid config
 
         // Only valid string values should be parsed
         assert_eq!(blocklist.hosts.len(), 1);
@@ -735,10 +735,10 @@ mod tests {
 
     #[test]
     fn test_plugin_name_consistency() {
-        let injector = HeaderInjector::from_config("header-plugin", None).unwrap();
+        let injector = HeaderInjector::from_config("header-plugin", None).unwrap(); // OK in tests - valid config
         assert_eq!(RequestPlugin::name(&injector), "header-plugin");
 
-        let blocklist = Blocklist::from_config("blocklist-plugin", None).unwrap();
+        let blocklist = Blocklist::from_config("blocklist-plugin", None).unwrap(); // OK in tests - valid config
         assert_eq!(RequestPlugin::name(&blocklist), "blocklist-plugin");
     }
 
@@ -752,7 +752,7 @@ mod tests {
                 "exec": "echo"
             });
 
-            let plugin = CommandPlugin::from_config("test", Some(&config)).unwrap();
+            let plugin = CommandPlugin::from_config("test", Some(&config)).unwrap(); // OK in tests - valid config
             assert_eq!(RequestPlugin::name(&plugin), "test");
             assert_eq!(plugin.exec, "echo");
             assert!(plugin.args.is_empty());
@@ -775,7 +775,7 @@ mod tests {
                 }
             });
 
-            let plugin = CommandPlugin::from_config("test", Some(&config)).unwrap();
+            let plugin = CommandPlugin::from_config("test", Some(&config)).unwrap(); // OK in tests - valid config
             assert_eq!(RequestPlugin::name(&plugin), "test");
             assert_eq!(plugin.exec, "curl");
             assert_eq!(plugin.args, vec!["-X", "POST", "--data", "test"]);
@@ -795,7 +795,7 @@ mod tests {
             let result = CommandPlugin::from_config("test", Some(&config));
             assert!(result.is_err());
             assert!(result
-                .unwrap_err()
+                .unwrap_err() // OK in tests - error expected
                 .to_string()
                 .contains("command plugin requires 'exec'"));
         }
@@ -809,7 +809,7 @@ mod tests {
             let result = CommandPlugin::from_config("test", Some(&config));
             assert!(result.is_err());
             assert!(result
-                .unwrap_err()
+                .unwrap_err() // OK in tests - error expected
                 .to_string()
                 .contains("command plugin requires 'exec'"));
         }
@@ -821,7 +821,7 @@ mod tests {
                 "max_concurrency": 5
             });
 
-            let plugin = CommandPlugin::from_config("test", Some(&config)).unwrap();
+            let plugin = CommandPlugin::from_config("test", Some(&config)).unwrap(); // OK in tests - valid config
             assert!(plugin.semaphore.is_some());
 
             // Verify semaphore has correct capacity
@@ -837,7 +837,7 @@ mod tests {
                 "max_concurrency": 0
             });
 
-            let plugin = CommandPlugin::from_config("test", Some(&config)).unwrap();
+            let plugin = CommandPlugin::from_config("test", Some(&config)).unwrap(); // OK in tests - valid config
             assert!(plugin.semaphore.is_none());
         }
 
@@ -847,7 +847,7 @@ mod tests {
                 "exec": "echo"
             });
 
-            let plugin = CommandPlugin::from_config("test", Some(&config)).unwrap();
+            let plugin = CommandPlugin::from_config("test", Some(&config)).unwrap(); // OK in tests - valid config
 
             // Initially no error
             assert!(!RequestPlugin::last_error_and_clear(&plugin));
@@ -874,7 +874,7 @@ mod tests {
                 "env": ["not", "object"]  // Should be object
             });
 
-            let plugin = CommandPlugin::from_config("test", Some(&config)).unwrap();
+            let plugin = CommandPlugin::from_config("test", Some(&config)).unwrap(); // OK in tests - valid config
             assert_eq!(plugin.exec, "echo");
             assert!(plugin.args.is_empty()); // Invalid args ignored
             assert_eq!(plugin.timeout_ms, 100); // Default used

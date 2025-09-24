@@ -83,7 +83,7 @@ impl CachedProxyHandler {
                 Ok(Response::builder()
                     .status(StatusCode::INTERNAL_SERVER_ERROR)
                     .body(Body::from("Internal server error"))
-                    .unwrap())
+                    .expect("Building internal server error response should not fail"))
             }
         }
     }
@@ -113,7 +113,7 @@ impl CachedProxyHandler {
             return Ok(Response::builder()
                 .status(StatusCode::NOT_FOUND)
                 .body(Body::from("Domain not found"))
-                .unwrap());
+                .expect("Building not found response should not fail"));
         }
 
         // Only cache GET requests by default
@@ -138,7 +138,7 @@ impl CachedProxyHandler {
             .traffic_logger
             .log_request(
                 request_id,
-                "127.0.0.1:0".parse().unwrap(),
+                "127.0.0.1:0".parse().expect("Default localhost address parsing should not fail"),
                 &host,
                 method.as_ref(),
                 &path,
@@ -190,10 +190,10 @@ impl CachedProxyHandler {
                         return Some(
                             Response::builder()
                                 .status(StatusCode::NOT_MODIFIED)
-                                .header("ETag", cached_entry.etag.as_ref().unwrap())
+                                .header("ETag", cached_entry.etag.as_ref().expect("Cached entry should have ETag"))
                                 .header("X-Cache", "HIT-CONDITIONAL")
                                 .body(Body::empty())
-                                .unwrap(),
+                                .expect("Building 304 response should not fail"),
                         );
                     }
                 }
@@ -245,7 +245,7 @@ impl CachedProxyHandler {
                 return Ok(Response::builder()
                     .status(StatusCode::OK)
                     .body(Body::from("Custom response"))
-                    .unwrap());
+                    .expect("Building custom response should not fail"));
             }
 
             // Apply request transformations if present
@@ -269,7 +269,7 @@ impl CachedProxyHandler {
                     return Ok(Response::builder()
                         .status(StatusCode::SERVICE_UNAVAILABLE)
                         .body(Body::from("Service unavailable"))
-                        .unwrap());
+                        .expect("Building service unavailable response should not fail"));
                 }
             };
 
@@ -289,7 +289,7 @@ impl CachedProxyHandler {
                 return Ok(Response::builder()
                     .status(StatusCode::SERVICE_UNAVAILABLE)
                     .body(Body::from("Service unavailable"))
-                    .unwrap());
+                    .expect("Building service unavailable response should not fail"));
             }
         };
 
@@ -301,7 +301,7 @@ impl CachedProxyHandler {
                 Response::builder()
                     .status(StatusCode::BAD_GATEWAY)
                     .body(Body::from("Bad gateway"))
-                    .unwrap()
+                    .expect("Building bad gateway response should not fail")
             }
         };
 
@@ -397,7 +397,7 @@ impl CachedProxyHandler {
             Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
                 .body(Body::from("Response building failed"))
-                .unwrap()
+                .expect("Building error response should not fail")
         })
     }
 
@@ -405,7 +405,13 @@ impl CachedProxyHandler {
     fn should_intercept_domain(&self, host: &str) -> bool {
         // Remove port from host if present
         let host = host.split(':').next().unwrap_or(host);
-        let cfg = self.domain_config.read().unwrap();
+        let cfg = match self.domain_config.read() {
+            Ok(config) => config,
+            Err(e) => {
+                warn!("Failed to read domain config: {}", e);
+                return false;
+            }
+        };
 
         // Check exclude list first
         if let Some(ref exclude_domains) = cfg.exclude_domains {
@@ -425,7 +431,13 @@ impl CachedProxyHandler {
 
     /// Check if host matches domain pattern
     fn matches_domain(&self, host: &str, pattern: &str) -> bool {
-        let cfg = self.domain_config.read().unwrap();
+        let cfg = match self.domain_config.read() {
+            Ok(config) => config,
+            Err(e) => {
+                warn!("Failed to read domain config: {}", e);
+                return false;
+            }
+        };
         if !cfg.wildcard_support {
             return host == pattern;
         }

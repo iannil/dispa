@@ -98,7 +98,7 @@ fn unauthorized<T>() -> Result<Response<Body>, T> {
         .status(StatusCode::UNAUTHORIZED)
         .header("WWW-Authenticate", "Bearer, Basic, X-Admin-Token")
         .body(Body::from("Unauthorized"))
-        .unwrap())
+        .expect("Building simple HTTP response should not fail"))
 }
 
 async fn config_get() -> Result<Response<Body>, hyper::http::Error> {
@@ -263,15 +263,14 @@ async fn config_set_json(mut req: Request<Body>) -> Result<Response<Body>, hyper
 
 async fn status_json_with_role(role: Option<String>) -> serde_json::Value {
     if let Some(state) = ADMIN_STATE.get() {
-        let domains = state.domain_config.read().unwrap().intercept_domains.len();
-        let exclude_domains = state
-            .domain_config
-            .read()
-            .unwrap()
-            .exclude_domains
-            .as_ref()
-            .map(|v| v.len())
-            .unwrap_or(0);
+        let domains = match state.domain_config.read() {
+            Ok(config) => config.intercept_domains.len(),
+            Err(_) => 0, // Lock poisoned, return default
+        };
+        let exclude_domains = match state.domain_config.read() {
+            Ok(config) => config.exclude_domains.as_ref().map(|v| v.len()).unwrap_or(0),
+            Err(_) => 0, // Lock poisoned, return default
+        };
         let summary = state.load_balancer.read().await.get_summary().await;
         let targets = summary.total_targets;
         let routing_enabled = state.routing_engine.read().await.is_some();
@@ -683,7 +682,7 @@ mod tests {
         // Prepare temp config file
         let mut cfg = crate::config::Config {
             server: crate::config::ServerConfig {
-                bind: "127.0.0.1:8080".parse().unwrap(),
+                bind: "127.0.0.1:8080".parse().unwrap(), // OK in tests - valid address
                 workers: Some(2),
                 max_connections: Some(1000),
                 connection_timeout: Some(30),
@@ -726,8 +725,8 @@ mod tests {
         };
         // Add security section for redaction test
         cfg.security = Some(crate::security::SecurityConfig{ enabled: true, access_control: None, auth: None, rate_limit: Some(crate::security::GlobalRateLimitConfig{ enabled: false, rate_per_sec: 0.0, burst: 0.0 }), ddos: None, jwt: Some(crate::security::JwtConfig{ enabled: true, algorithm: "HS256".into(), secret: Some("s3cr3t".into()), leeway_secs: Some(0), issuer: None, audience: None, cache_enabled: Some(true), rs256_keys: None, jwks_url: None, jwks_cache_secs: None }) });
-        let mut temp = NamedTempFile::new().unwrap();
-        write!(temp, "{}", toml::to_string_pretty(&cfg).unwrap()).unwrap();
+        let mut temp = NamedTempFile::new().unwrap(); // OK in tests - temp file creation
+        write!(temp, "{}", toml::to_string_pretty(&cfg).unwrap()).unwrap(); // OK in tests - valid config serialization
 
         // Build admin state
         let domain = std::sync::Arc::new(std::sync::RwLock::new(crate::config::DomainConfig{ intercept_domains: vec!["example.com".into()], exclude_domains: None, wildcard_support: true }));
@@ -743,39 +742,39 @@ mod tests {
         super::init_admin(super::AdminState{ config_path: temp.path().to_path_buf(), domain_config: domain, load_balancer: lb, routing_engine: routing, plugins, security });
 
         // 1) GET /admin/status with admin token
-        let req = Request::builder().method("GET").uri("/admin/status").header("x-admin-token","adm").body(Body::empty()).unwrap();
-        let resp = super::handle_admin(req).await.unwrap();
+        let req = Request::builder().method("GET").uri("/admin/status").header("x-admin-token","adm").body(Body::empty()).unwrap(); // OK in tests - valid request
+        let resp = super::handle_admin(req).await.unwrap(); // OK in tests - admin handler expected to succeed
         assert_eq!(resp.status(), StatusCode::OK);
-        let body = hyper::body::to_bytes(resp.into_body()).await.unwrap();
-        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(v.get("role").and_then(|x| x.as_str()).unwrap_or("") , "admin");
+        let body = hyper::body::to_bytes(resp.into_body()).await.unwrap(); // OK in tests - body conversion expected to succeed
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap(); // OK in tests - JSON parsing expected to succeed
+        assert_eq!(v.get("role").and_then(|x| x.as_str()).unwrap_or("") , "admin"); // OK in tests - role field expected to exist
 
         // 2) GET /admin/config with admin token -> redacted secret
-        let req = Request::builder().method("GET").uri("/admin/config").header("x-admin-token","adm").body(Body::empty()).unwrap();
-        let resp = super::handle_admin(req).await.unwrap();
+        let req = Request::builder().method("GET").uri("/admin/config").header("x-admin-token","adm").body(Body::empty()).unwrap(); // OK in tests - valid request
+        let resp = super::handle_admin(req).await.unwrap(); // OK in tests - admin handler expected to succeed
         assert_eq!(resp.status(), StatusCode::OK);
-        let txt = String::from_utf8(hyper::body::to_bytes(resp.into_body()).await.unwrap().to_vec()).unwrap();
+        let txt = String::from_utf8(hyper::body::to_bytes(resp.into_body()).await.unwrap().to_vec()).unwrap(); // OK in tests - UTF8 conversion expected to succeed
         assert!(txt.lines().any(|l| l.trim_start().starts_with("secret = \"***\"")));
 
         // 3) POST /admin/config/json with editor token -> allowed
         let patch = serde_json::json!({"security": {"rate_limit": {"enabled": true, "rate_per_sec": 5.0, "burst": 10.0}}});
-        let req = Request::builder().method("POST").uri("/admin/config/json").header("x-admin-token","ed").header("content-type","application/json").body(Body::from(patch.to_string())).unwrap();
-        let resp = super::handle_admin(req).await.unwrap();
+        let req = Request::builder().method("POST").uri("/admin/config/json").header("x-admin-token","ed").header("content-type","application/json").body(Body::from(patch.to_string())).unwrap(); // OK in tests - valid request
+        let resp = super::handle_admin(req).await.unwrap(); // OK in tests - admin handler expected to succeed
         assert_eq!(resp.status(), StatusCode::OK);
         // verify updated
-        let new_cfg: crate::config::Config = toml::from_str(&std::fs::read_to_string(temp.path()).unwrap()).unwrap();
-        let rl = new_cfg.security.unwrap().rate_limit.unwrap();
+        let new_cfg: crate::config::Config = toml::from_str(&std::fs::read_to_string(temp.path()).unwrap()).unwrap(); // OK in tests - config parsing expected to succeed
+        let rl = new_cfg.security.unwrap().rate_limit.unwrap(); // OK in tests - security config expected to exist
         assert!(rl.enabled && (rl.rate_per_sec - 5.0).abs() < 1e-6 && (rl.burst - 10.0).abs() < 1e-6);
 
         // 4) POST /admin/config (full file) with editor token -> unauthorized
-        let req = Request::builder().method("POST").uri("/admin/config").header("x-admin-token","ed").body(Body::from("x".to_string())).unwrap();
-        let resp = super::handle_admin(req).await.unwrap();
+        let req = Request::builder().method("POST").uri("/admin/config").header("x-admin-token","ed").body(Body::from("x".to_string())).unwrap(); // OK in tests - valid request
+        let resp = super::handle_admin(req).await.unwrap(); // OK in tests - admin handler expected to succeed
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 
         // 5) viewer token cannot write json
         std::env::set_var("DISPA_VIEWER_TOKEN", "vw");
-        let req = Request::builder().method("POST").uri("/admin/config/json").header("x-admin-token","vw").header("content-type","application/json").body(Body::from("{}".to_string())).unwrap();
-        let resp = super::handle_admin(req).await.unwrap();
+        let req = Request::builder().method("POST").uri("/admin/config/json").header("x-admin-token","vw").header("content-type","application/json").body(Body::from("{}".to_string())).unwrap(); // OK in tests - valid request
+        let resp = super::handle_admin(req).await.unwrap(); // OK in tests - admin handler expected to succeed
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
         }).await.expect("test_admin_rbac_and_config_json_merge timed out");
     }

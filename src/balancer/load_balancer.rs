@@ -594,10 +594,10 @@ mod tests {
         lb.reset_round_robin_index().await;
 
         // Test round robin distribution
-        let selected1 = lb.round_robin_select(&targets).await.unwrap();
-        let selected2 = lb.round_robin_select(&targets).await.unwrap();
-        let selected3 = lb.round_robin_select(&targets).await.unwrap();
-        let selected4 = lb.round_robin_select(&targets).await.unwrap(); // Should wrap around
+        let selected1 = lb.round_robin_select(&targets).await.unwrap(); // OK in tests - targets not empty
+        let selected2 = lb.round_robin_select(&targets).await.unwrap(); // OK in tests - targets not empty
+        let selected3 = lb.round_robin_select(&targets).await.unwrap(); // OK in tests - targets not empty
+        let selected4 = lb.round_robin_select(&targets).await.unwrap(); // OK in tests - targets not empty (should wrap around)
 
         assert_eq!(selected1.name, "server2"); // Index starts at 0, increments to 1
         assert_eq!(selected2.name, "server3"); // Index 2
@@ -688,7 +688,7 @@ mod tests {
         )
         .await;
 
-        let selected = lb.least_connections_select(&targets).await.unwrap();
+        let selected = lb.least_connections_select(&targets).await.unwrap(); // OK in tests - targets not empty
         assert_eq!(selected.name, "server2");
     }
 
@@ -704,7 +704,7 @@ mod tests {
 
         // Test that random selection returns valid targets
         for _ in 0..10 {
-            let selected = lb.random_select(&targets).await.unwrap();
+            let selected = lb.random_select(&targets).await.unwrap(); // OK in tests - targets not empty
             assert!(targets.iter().any(|t| t.name == selected.name));
         }
     }
@@ -727,7 +727,7 @@ mod tests {
         let config = create_test_config(targets.clone(), LoadBalancingType::Weighted);
         let lb = LoadBalancer::new_for_test(config);
 
-        let selected = lb.weighted_round_robin_select(&targets).await.unwrap();
+        let selected = lb.weighted_round_robin_select(&targets).await.unwrap(); // OK in tests - targets not empty
         assert_eq!(selected.name, "server1");
     }
 
@@ -742,7 +742,7 @@ mod tests {
         lb.increment_connection_count("server1").await;
 
         let stats = lb.get_connection_stats().await;
-        let server1_stats = stats.get("server1").unwrap();
+        let server1_stats = stats.get("server1").unwrap(); // OK in tests - server1 stats expected to exist
         assert_eq!(server1_stats.active_connections, 2);
         assert_eq!(server1_stats.total_requests, 2);
 
@@ -750,7 +750,7 @@ mod tests {
         lb.decrement_connection_count("server1").await;
 
         let stats = lb.get_connection_stats().await;
-        let server1_stats = stats.get("server1").unwrap();
+        let server1_stats = stats.get("server1").unwrap(); // OK in tests - server1 stats expected to exist
         assert_eq!(server1_stats.active_connections, 1);
         assert_eq!(server1_stats.total_requests, 2); // Should not change
     }
@@ -766,7 +766,7 @@ mod tests {
             .await;
 
         let stats = lb.get_connection_stats().await;
-        let server1_stats = stats.get("server1").unwrap();
+        let server1_stats = stats.get("server1").unwrap(); // OK in tests - server1 stats expected to exist
         assert_eq!(server1_stats.total_errors, 0);
         assert_eq!(server1_stats.avg_response_time_ms, 100.0);
 
@@ -775,7 +775,7 @@ mod tests {
             .await;
 
         let stats = lb.get_connection_stats().await;
-        let server1_stats = stats.get("server1").unwrap();
+        let server1_stats = stats.get("server1").unwrap(); // OK in tests - server1 stats expected to exist
         assert_eq!(server1_stats.total_errors, 1);
         // EMA: 100.0 * 0.9 + 200.0 * 0.1 = 110.0
         assert_eq!(server1_stats.avg_response_time_ms, 110.0);
@@ -864,12 +864,12 @@ mod tests {
 
             // Wait for all tasks to complete
             for handle in handles {
-                handle.await.unwrap();
+                handle.await.unwrap(); // OK in tests - join handle expected to succeed
             }
 
             // Verify the final state
             let stats = lb.get_connection_stats().await;
-            let server1_stats = stats.get("server1").unwrap();
+            let server1_stats = stats.get("server1").unwrap(); // OK in tests - server1 stats expected to exist // OK in tests - server1 stats expected to exist
             assert_eq!(server1_stats.total_requests, 1000);
             assert_eq!(server1_stats.active_connections, 1000);
         })
@@ -891,7 +891,7 @@ mod tests {
         let mut selection_counts = HashMap::new();
         for _ in 0..60 {
             // 60 selections to test proper distribution
-            let selected = lb.weighted_round_robin_select(&targets).await.unwrap();
+            let selected = lb.weighted_round_robin_select(&targets).await.unwrap(); // OK in tests - targets not empty // OK in tests - targets not empty
             *selection_counts.entry(selected.name).or_insert(0) += 1;
         }
 
@@ -958,7 +958,7 @@ mod tests {
 
         // Test multiple selections - should consistently pick server2
         for _ in 0..10 {
-            let selected = lb.least_connections_select(&targets).await.unwrap();
+            let selected = lb.least_connections_select(&targets).await.unwrap(); // OK in tests - targets not empty
             assert_eq!(selected.name, "server2");
         }
 
@@ -972,7 +972,7 @@ mod tests {
         )
         .await;
 
-        let selected = lb.least_connections_select(&targets).await.unwrap();
+        let selected = lb.least_connections_select(&targets).await.unwrap(); // OK in tests - targets not empty
         assert_eq!(selected.name, "server1");
     }
 
@@ -991,7 +991,7 @@ mod tests {
         // Test that random selection returns valid targets and all targets get selected
         for _ in 0..30 {
             // Smaller sample to just verify functionality
-            let selected = lb.random_select(&targets).await.unwrap();
+            let selected = lb.random_select(&targets).await.unwrap(); // OK in tests - targets not empty
             assert!(targets.iter().any(|t| t.name == selected.name));
             *selection_counts.entry(selected.name).or_insert(0) += 1;
         }
@@ -1028,7 +1028,7 @@ mod tests {
         }
 
         let stats = lb.get_connection_stats().await;
-        let server1_stats = stats.get("server1").unwrap();
+        let server1_stats = stats.get("server1").unwrap(); // OK in tests - server1 stats expected to exist
         assert_eq!(server1_stats.active_connections, 1000);
         assert_eq!(server1_stats.total_requests, 1000);
     }
@@ -1043,14 +1043,14 @@ mod tests {
         lb.record_request_result("server1", true, Duration::from_millis(0))
             .await;
         let stats = lb.get_connection_stats().await;
-        let server1_stats = stats.get("server1").unwrap();
+        let server1_stats = stats.get("server1").unwrap(); // OK in tests - server1 stats expected to exist
         assert_eq!(server1_stats.avg_response_time_ms, 0.0);
 
         // Test with very large duration - check actual implementation
         lb.record_request_result("server1", true, Duration::from_millis(10000))
             .await;
         let stats = lb.get_connection_stats().await;
-        let server1_stats = stats.get("server1").unwrap();
+        let server1_stats = stats.get("server1").unwrap(); // OK in tests - server1 stats expected to exist
         // The actual implementation may use simple average, not EMA
         // So with 2 requests: (0 + 10000) / 2 = 5000
         assert!(server1_stats.avg_response_time_ms > 0.0);
@@ -1170,7 +1170,7 @@ mod tests {
 
             // Wait for all operations to complete
             for handle in handles {
-                handle.await.unwrap();
+                handle.await.unwrap(); // OK in tests - join handle expected to succeed
             }
 
             // Verify final state is consistent

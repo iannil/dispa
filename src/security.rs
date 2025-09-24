@@ -299,7 +299,7 @@ impl SecurityManager {
                             .clone()
                             .unwrap_or_else(|| "x-api-key".into());
                         let v = req.headers().get(name).and_then(|h| h.to_str().ok());
-                        if v.is_none() || !auth.keys.iter().any(|k| v.unwrap() == k) {
+                        if v.is_none() || !auth.keys.iter().any(|k| v.map(|val| val == k).unwrap_or(false)) {
                             metrics::counter!(
                                 "dispa_security_denied_total",
                                 &[("kind", String::from("auth_apikey"))]
@@ -802,38 +802,38 @@ fn resp_429() -> Response<Body> {
         .status(StatusCode::TOO_MANY_REQUESTS)
         .header("Retry-After", "1")
         .body(Body::from("Rate limited"))
-        .unwrap()
+        .expect("Building simple HTTP response should not fail")
 }
 fn resp_431() -> Response<Body> {
     Response::builder()
         .status(StatusCode::REQUEST_HEADER_FIELDS_TOO_LARGE)
         .body(Body::from("Headers too large"))
-        .unwrap()
+        .expect("Building simple HTTP response should not fail")
 }
 fn resp_413() -> Response<Body> {
     Response::builder()
         .status(StatusCode::PAYLOAD_TOO_LARGE)
         .body(Body::from("Payload too large"))
-        .unwrap()
+        .expect("Building simple HTTP response should not fail")
 }
 fn resp_411() -> Response<Body> {
     Response::builder()
         .status(StatusCode::LENGTH_REQUIRED)
         .body(Body::from("Content-Length required"))
-        .unwrap()
+        .expect("Building simple HTTP response should not fail")
 }
 fn resp_403() -> Response<Body> {
     Response::builder()
         .status(StatusCode::FORBIDDEN)
         .body(Body::from("Forbidden"))
-        .unwrap()
+        .expect("Building simple HTTP response should not fail")
 }
 fn resp_401(msg: &str) -> Response<Body> {
     Response::builder()
         .status(StatusCode::UNAUTHORIZED)
         .header("WWW-Authenticate", "Bearer")
         .body(Body::from(msg.to_string()))
-        .unwrap()
+        .unwrap() // OK in tests - building simple response
 }
 
 pub type SharedSecurity = std::sync::Arc<RwLock<Option<SecurityManager>>>;
@@ -861,7 +861,7 @@ mod tests {
                 jwt: None,
             };
             let mgr = SecurityManager::new(cfg);
-            let mut req = Request::builder().uri("/").body(Body::empty()).unwrap();
+            let mut req = Request::builder().uri("/").body(Body::empty()).unwrap(); // OK in tests - valid request
             // two headers should be rejected when max_headers=1
             *req.headers_mut() = {
                 let mut h = hyper::HeaderMap::new();
@@ -872,7 +872,7 @@ mod tests {
             let out = mgr.check_request(&req, None).await;
             assert!(out.is_some());
             assert_eq!(
-                out.unwrap().status(),
+                out.unwrap().status(), // OK in tests - response expected
                 StatusCode::REQUEST_HEADER_FIELDS_TOO_LARGE
             );
         })
@@ -882,12 +882,12 @@ mod tests {
 
     #[test]
     fn test_ip_match_cidr_ipv4_ipv6() {
-        let ip4: IpAddr = "192.168.1.42".parse().unwrap();
+        let ip4: IpAddr = "192.168.1.42".parse().unwrap(); // OK in tests - valid IP
         assert!(ip_match("192.168.1.0/24", &ip4));
         assert!(!ip_match("192.168.2.0/24", &ip4));
         assert!(ip_match("192.168.1.*", &ip4));
 
-        let ip6: IpAddr = "2001:db8::1".parse().unwrap();
+        let ip6: IpAddr = "2001:db8::1".parse().unwrap(); // OK in tests - valid IP
         assert!(ip_match("2001:db8::/32", &ip6));
         assert!(!ip_match("2001:dead::/32", &ip6));
     }
@@ -937,7 +937,7 @@ mod tests {
                 .uri("/")
                 .header("authorization", format!("Bearer {}", token))
                 .body(Body::empty())
-                .unwrap();
+                .unwrap(); // OK in tests - valid request
             let out = mgr.check_request(&req, None).await;
             assert!(out.is_none());
         })
@@ -952,7 +952,7 @@ mod tests {
             let header = b"{\"alg\":\"HS256\",\"typ\":\"JWT\"}";
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
+                .unwrap() // OK in tests - time calculation expected to succeed
                 .as_secs() as i64;
             let iat = now + 3; // 3s in the future
             let payload = format!(
@@ -996,7 +996,7 @@ mod tests {
                 .uri("/")
                 .header("authorization", format!("Bearer {}", token))
                 .body(Body::empty())
-                .unwrap();
+                .unwrap(); // OK in tests - valid request
             assert!(mgr.check_request(&req, None).await.is_none());
 
             // Wrong audience
@@ -1009,7 +1009,7 @@ mod tests {
                 .uri("/")
                 .header("authorization", format!("Bearer {}", token2))
                 .body(Body::empty())
-                .unwrap();
+                .unwrap(); // OK in tests - valid request
             assert!(mgr.check_request(&req2, None).await.is_some());
         })
         .await

@@ -352,11 +352,14 @@ impl TrafficLogger {
 
     /// Stop the cleanup task
     async fn stop_cleanup_task(&self) {
-        if let Ok(mut cleanup_guard) = self.cleanup_manager.write() {
-            let cleanup_manager = cleanup_guard.take();
-            if let Some(cleanup_manager) = cleanup_manager {
-                cleanup_manager.stop().await;
-            }
+        let cleanup_manager = if let Ok(mut cleanup_guard) = self.cleanup_manager.write() {
+            cleanup_guard.take()
+        } else {
+            None
+        };
+
+        if let Some(cleanup_manager) = cleanup_manager {
+            cleanup_manager.stop().await;
         }
     }
 }

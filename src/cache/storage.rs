@@ -451,10 +451,10 @@ mod tests {
             let key = "test_key".to_string();
 
             // Store entry
-            cache.put(key.clone(), entry.clone()).await.unwrap();
+            cache.put(key.clone(), entry.clone()).await.unwrap(); // OK in tests - cache put expected to succeed
 
             // Retrieve entry
-            let retrieved = cache.get(&key).await.unwrap();
+            let retrieved = cache.get(&key).await.unwrap(); // OK in tests - cache get expected to succeed
             assert_eq!(retrieved.body, entry.body);
             assert_eq!(retrieved.status, entry.status);
 
@@ -495,7 +495,7 @@ mod tests {
             let entry = create_test_entry("test data", 0); // 0 seconds TTL
             let key = "test_key".to_string();
 
-            cache.put(key.clone(), entry).await.unwrap();
+            cache.put(key.clone(), entry).await.unwrap(); // OK in tests - cache put expected to succeed
 
             // Wait a bit to ensure expiration
             sleep(Duration::from_millis(10)).await;
@@ -520,7 +520,7 @@ mod tests {
             let entry = create_test_entry("test data", 60);
             let key = "test_key".to_string();
 
-            cache.put(key.clone(), entry).await.unwrap();
+            cache.put(key.clone(), entry).await.unwrap(); // OK in tests - cache put expected to succeed
 
             // Remove entry
             let removed = cache.remove(&key).await.unwrap();
@@ -599,7 +599,7 @@ mod tests {
 
             assert!(!cache.contains_key(&key).await);
 
-            cache.put(key.clone(), entry).await.unwrap();
+            cache.put(key.clone(), entry).await.unwrap(); // OK in tests - cache put expected to succeed
             assert!(cache.contains_key(&key).await);
 
             cache.remove(&key).await;
@@ -620,7 +620,7 @@ mod tests {
             let key = "test_key".to_string();
 
             // Operations should succeed but do nothing
-            cache.put(key.clone(), entry).await.unwrap();
+            cache.put(key.clone(), entry).await.unwrap(); // OK in tests - cache put expected to succeed
 
             let result = cache.get(&key).await;
             assert!(result.is_none());

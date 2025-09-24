@@ -372,7 +372,7 @@ mod tests {
         let config = create_test_config();
         let engine = PolicyEngine::new(config);
 
-        let uri: Uri = "/static/css/style.css".parse().unwrap();
+        let uri: Uri = "/static/css/style.css".parse().unwrap(); // OK in tests - valid URI
         let request_headers = HeaderMap::new();
         let status = StatusCode::OK;
         let response_headers = HeaderMap::new();
@@ -389,9 +389,9 @@ mod tests {
         let config = create_test_config();
         let engine = PolicyEngine::new(config);
 
-        let uri: Uri = "/static/css/style.css".parse().unwrap();
+        let uri: Uri = "/static/css/style.css".parse().unwrap(); // OK in tests - valid URI
         let mut request_headers = HeaderMap::new();
-        request_headers.insert("authorization", "Bearer token".parse().unwrap());
+        request_headers.insert("authorization", "Bearer token".parse().unwrap()); // OK in tests - valid header
         let status = StatusCode::OK;
         let response_headers = HeaderMap::new();
 
@@ -400,7 +400,7 @@ mod tests {
         assert!(!decision.should_cache());
         assert!(decision
             .no_cache_reason()
-            .unwrap()
+            .unwrap() // OK in tests - DoNotCache expected
             .contains("authentication"));
     }
 
@@ -409,18 +409,18 @@ mod tests {
         let config = create_test_config();
         let engine = PolicyEngine::new(config);
 
-        let uri: Uri = "/static/css/style.css".parse().unwrap();
+        let uri: Uri = "/static/css/style.css".parse().unwrap(); // OK in tests - valid URI
         let request_headers = HeaderMap::new();
         let status = StatusCode::OK;
         let mut response_headers = HeaderMap::new();
-        response_headers.insert("cache-control", "no-cache".parse().unwrap());
+        response_headers.insert("cache-control", "no-cache".parse().unwrap()); // OK in tests - valid header
 
         let decision = engine.should_cache(&uri, &request_headers, status, &response_headers);
 
         assert!(!decision.should_cache());
         assert!(decision
             .no_cache_reason()
-            .unwrap()
+            .unwrap() // OK in tests - DoNotCache expected
             .contains("Cache-Control"));
     }
 
@@ -429,11 +429,11 @@ mod tests {
         let config = create_test_config();
         let engine = PolicyEngine::new(config);
 
-        let uri: Uri = "/some/path".parse().unwrap();
+        let uri: Uri = "/some/path".parse().unwrap(); // OK in tests - valid URI
         let request_headers = HeaderMap::new();
         let status = StatusCode::OK;
         let mut response_headers = HeaderMap::new();
-        response_headers.insert("cache-control", "public, max-age=7200".parse().unwrap());
+        response_headers.insert("cache-control", "public, max-age=7200".parse().unwrap()); // OK in tests - valid header
 
         let decision = engine.should_cache(&uri, &request_headers, status, &response_headers);
 
@@ -447,7 +447,7 @@ mod tests {
         let config = create_test_config();
         let engine = PolicyEngine::new(config);
 
-        let uri: Uri = "/static/css/style.css".parse().unwrap();
+        let uri: Uri = "/static/css/style.css".parse().unwrap(); // OK in tests - valid URI
         let request_headers = HeaderMap::new();
         let status = StatusCode::INTERNAL_SERVER_ERROR;
         let response_headers = HeaderMap::new();
@@ -457,7 +457,7 @@ mod tests {
         assert!(!decision.should_cache());
         assert!(decision
             .no_cache_reason()
-            .unwrap()
+            .unwrap() // OK in tests - DoNotCache expected
             .contains("not cacheable"));
     }
 
@@ -466,12 +466,12 @@ mod tests {
         let config = create_test_config();
         let engine = PolicyEngine::new(config);
 
-        let uri: Uri = "/api/users".parse().unwrap();
+        let uri: Uri = "/api/users".parse().unwrap(); // OK in tests - valid URI
         let mut request_headers = HeaderMap::new();
-        request_headers.insert("accept", "application/json".parse().unwrap());
+        request_headers.insert("accept", "application/json".parse().unwrap()); // OK in tests - valid header
         let status = StatusCode::OK;
         let mut response_headers = HeaderMap::new();
-        response_headers.insert("content-type", "application/json".parse().unwrap());
+        response_headers.insert("content-type", "application/json".parse().unwrap()); // OK in tests - valid header
 
         let decision = engine.should_cache(&uri, &request_headers, status, &response_headers);
 
@@ -480,7 +480,7 @@ mod tests {
         assert_eq!(decision.ttl(), Some(Duration::from_secs(300)));
         assert!(decision
             .vary_suffix()
-            .unwrap()
+            .unwrap() // OK in tests - Cache decision expected
             .contains("accept:application/json"));
     }
 
@@ -489,7 +489,7 @@ mod tests {
         let config = create_test_config();
         let engine = PolicyEngine::new(config);
 
-        let uri: Uri = "/api/users?page=1".parse().unwrap();
+        let uri: Uri = "/api/users?page=1".parse().unwrap(); // OK in tests - valid URI
         let headers = HeaderMap::new();
 
         let key = engine.generate_cache_key(&uri, &headers, "");
@@ -519,12 +519,12 @@ mod tests {
         assert!(!engine.is_generally_cacheable(StatusCode::BAD_REQUEST, &headers));
 
         // Set-Cookie makes it non-cacheable
-        headers.insert("set-cookie", "session=abc123".parse().unwrap());
+        headers.insert("set-cookie", "session=abc123".parse().unwrap()); // OK in tests - valid header
         assert!(!engine.is_generally_cacheable(StatusCode::OK, &headers));
 
         // Expires=0 makes it non-cacheable
         headers.clear();
-        headers.insert("expires", "0".parse().unwrap());
+        headers.insert("expires", "0".parse().unwrap()); // OK in tests - valid header
         assert!(!engine.is_generally_cacheable(StatusCode::OK, &headers));
     }
 
@@ -534,7 +534,7 @@ mod tests {
         config.enabled = false;
         let engine = PolicyEngine::new(config);
 
-        let uri: Uri = "/static/css/style.css".parse().unwrap();
+        let uri: Uri = "/static/css/style.css".parse().unwrap(); // OK in tests - valid URI
         let request_headers = HeaderMap::new();
         let status = StatusCode::OK;
         let response_headers = HeaderMap::new();
@@ -542,7 +542,7 @@ mod tests {
         let decision = engine.should_cache(&uri, &request_headers, status, &response_headers);
 
         assert!(!decision.should_cache());
-        assert!(decision.no_cache_reason().unwrap().contains("disabled"));
+        assert!(decision.no_cache_reason().unwrap().contains("disabled")); // OK in tests - DoNotCache expected
     }
 
     #[test]
@@ -552,7 +552,7 @@ mod tests {
 
         let policy = engine.get_policy("static-assets");
         assert!(policy.is_some());
-        assert_eq!(policy.unwrap().name, "static-assets");
+        assert_eq!(policy.unwrap().name, "static-assets"); // OK in tests - policy expected to exist
 
         let missing_policy = engine.get_policy("nonexistent");
         assert!(missing_policy.is_none());

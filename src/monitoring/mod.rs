@@ -33,7 +33,7 @@ mod tests {
         tokio::time::timeout(std::time::Duration::from_secs(10), async {
             let config = MonitoringConfig {
                 enabled: false,
-                bind: "127.0.0.1:0".parse().unwrap(),
+                bind: "127.0.0.1:0".parse().unwrap(), // OK in tests - valid address
                 health_endpoint: "/health".to_string(),
                 metrics_endpoint: "/metrics".to_string(),
                 prometheus_enabled: true,
@@ -46,7 +46,7 @@ mod tests {
 
             let result = start_metrics_server(config).await;
             assert!(result.is_ok(), "Should start metrics server when disabled");
-            let handle = result.unwrap();
+            let handle = result.unwrap(); // OK in tests - server start expected to succeed
             sleep(Duration::from_millis(10)).await;
             handle.abort();
         })
@@ -59,7 +59,7 @@ mod tests {
         tokio::time::timeout(std::time::Duration::from_secs(10), async {
             let config = MonitoringConfig {
                 enabled: true,
-                bind: "127.0.0.1:0".parse().unwrap(),
+                bind: "127.0.0.1:0".parse().unwrap(), // OK in tests - valid address
                 health_endpoint: "/health".to_string(),
                 metrics_endpoint: "/metrics".to_string(),
                 prometheus_enabled: true,
@@ -75,7 +75,7 @@ mod tests {
                 result.is_ok(),
                 "Should successfully start metrics server task"
             );
-            let handle = result.unwrap();
+            let handle = result.unwrap(); // OK in tests - server start expected to succeed
             sleep(Duration::from_millis(100)).await;
             if handle.is_finished() {
                 let _ = handle.await;
@@ -92,7 +92,7 @@ mod tests {
         let configs = vec![
             MonitoringConfig {
                 enabled: true,
-                bind: "127.0.0.1:9091".parse().unwrap(),
+                bind: "127.0.0.1:9091".parse().unwrap(), // OK in tests - valid address
                 health_endpoint: "/health".to_string(),
                 metrics_endpoint: "/metrics".to_string(),
                 prometheus_enabled: true,
@@ -104,7 +104,7 @@ mod tests {
             },
             MonitoringConfig {
                 enabled: true,
-                bind: "127.0.0.1:9092".parse().unwrap(),
+                bind: "127.0.0.1:9092".parse().unwrap(), // OK in tests - valid address
                 health_endpoint: "/health".to_string(),
                 metrics_endpoint: "/metrics".to_string(),
                 prometheus_enabled: true,
@@ -116,7 +116,7 @@ mod tests {
             },
             MonitoringConfig {
                 enabled: false,
-                bind: "127.0.0.1:9093".parse().unwrap(),
+                bind: "127.0.0.1:9093".parse().unwrap(), // OK in tests - valid address
                 health_endpoint: "/health".to_string(),
                 metrics_endpoint: "/metrics".to_string(),
                 prometheus_enabled: true,
@@ -137,7 +137,7 @@ mod tests {
                     result.is_ok(),
                     "Should start metrics server with custom ports"
                 );
-                handles.push(result.unwrap());
+                handles.push(result.unwrap()); // OK in tests - server start expected to succeed
             }
             sleep(Duration::from_millis(100)).await;
             for handle in handles {
@@ -157,7 +157,7 @@ mod tests {
             for i in 0..5 {
                 let config = MonitoringConfig {
                     enabled: true,
-                    bind: "127.0.0.1:0".parse().unwrap(),
+                    bind: "127.0.0.1:0".parse().unwrap(), // OK in tests - valid address
                     health_endpoint: "/health".to_string(),
                     metrics_endpoint: "/metrics".to_string(),
                     prometheus_enabled: true,
@@ -169,7 +169,7 @@ mod tests {
                 };
                 let result = start_metrics_server(config).await;
                 assert!(result.is_ok(), "Should start metrics server {}", i);
-                handles.push(result.unwrap());
+                handles.push(result.unwrap()); // OK in tests - server start expected to succeed
             }
             sleep(Duration::from_millis(200)).await;
 
@@ -215,7 +215,7 @@ mod tests {
         };
 
         tokio::time::timeout(Duration::from_secs(10), async {
-            let handle = start_metrics_server(config).await.unwrap();
+            let handle = start_metrics_server(config).await.unwrap(); // OK in tests - server start expected to succeed
             assert!(!handle.is_finished());
             handle.abort();
             sleep(Duration::from_millis(10)).await;
