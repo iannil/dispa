@@ -38,7 +38,7 @@ fn create_end_to_end_test_config(target_urls: Vec<String>) -> Config {
                 "*.api.example.com".to_string(),
             ],
             exclude_domains: Some(vec!["admin.api.example.com".to_string()]),
-            wildcard_support: true,
+            enable_wildcard: true,
         },
         targets: TargetConfig {
             targets,
@@ -74,7 +74,7 @@ fn create_end_to_end_test_config(target_urls: Vec<String>) -> Config {
             health_check_port: 8081,
             metrics_endpoint: "/metrics".to_string(),
             health_endpoint: "/health".to_string(),
-            prometheus_enabled: false,
+            enable_prometheus: false,
             pushgateway: None,
             histogram_buckets: None,
             capacity: Default::default(),
@@ -176,7 +176,7 @@ async fn test_domain_matching_integration() {
             .domains
             .intercept_domains
             .contains(&"*.api.example.com".to_string()));
-        assert!(proxy_server.config.domains.wildcard_support);
+        assert!(proxy_server.config.domains.enable_wildcard);
         assert!(proxy_server.config.domains.exclude_domains.is_some());
     })
     .await
@@ -390,7 +390,7 @@ async fn test_monitoring_integration() {
                 health_check_port: 8081,
                 metrics_endpoint: "/metrics".to_string(),
                 health_endpoint: "/health".to_string(),
-                prometheus_enabled: false,
+                enable_prometheus: false,
                 pushgateway: None,
                 histogram_buckets: None,
                 capacity: Default::default(),
@@ -402,7 +402,7 @@ async fn test_monitoring_integration() {
                 health_check_port: 0, // Auto-assign
                 metrics_endpoint: "/metrics".to_string(),
                 health_endpoint: "/health".to_string(),
-                prometheus_enabled: false,
+                enable_prometheus: false,
                 pushgateway: None,
                 histogram_buckets: None,
                 capacity: Default::default(),

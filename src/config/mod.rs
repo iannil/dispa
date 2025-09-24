@@ -124,7 +124,7 @@ impl Config {
         if let Some(cache) = &mut self.cache {
             if !cache.enabled {
                 // Disable metrics if cache is disabled
-                cache.metrics_enabled = false;
+                cache.enable_metrics = false;
             }
         }
 
@@ -253,7 +253,7 @@ impl Config {
 
         // Validate monitoring and cache metrics consistency
         if let Some(cache) = &self.cache {
-            if cache.enabled && cache.metrics_enabled && !self.monitoring.enabled {
+            if cache.enabled && cache.enable_metrics && !self.monitoring.enabled {
                 warn!(
                     "Cache metrics are enabled but monitoring is disabled. \
                     Cache metrics will not be available."
@@ -359,7 +359,7 @@ bind = "127.0.0.1:8080"
 [domains]
 intercept_domains = ["example.com"]
 exclude_domains = []
-wildcard_support = true
+enable_wildcard = true
 
 [[targets.targets]]
 address = "http://localhost:3000"
@@ -396,7 +396,7 @@ enabled = true
 bind = "127.0.0.1:8081"
 health_endpoint = "/health"
 metrics_endpoint = "/metrics"
-prometheus_enabled = true
+enable_prometheus = true
 metrics_port = 9090
 health_check_port = 8081
 "#;
@@ -423,7 +423,7 @@ bind = "${TEST_HOST:-localhost}:${TEST_PORT:-8080}"
 [domains]
 intercept_domains = ["${TEST_HOST}"]
 exclude_domains = []
-wildcard_support = true
+enable_wildcard = true
 
 [[targets.targets]]
 address = "http://${TEST_HOST:-localhost}:3000"
@@ -459,7 +459,7 @@ enabled = true
 bind = "127.0.0.1:8081"
 health_endpoint = "/health"
 metrics_endpoint = "/metrics"
-prometheus_enabled = true
+enable_prometheus = true
 metrics_port = 9090
 health_check_port = 8081
 "#;
@@ -485,7 +485,7 @@ bind = "127.0.0.1:8080"
 [domains]
 intercept_domains = ["example.com"]
 exclude_domains = []
-wildcard_support = true
+enable_wildcard = true
 
 [[targets.targets]]
 address = "http://localhost:3000"
@@ -516,7 +516,7 @@ enabled = true
 bind = "127.0.0.1:8081"
 health_endpoint = "/health"
 metrics_endpoint = "/metrics"
-prometheus_enabled = true
+enable_prometheus = true
 metrics_port = 9090
 health_check_port = 8081
 "#;
@@ -557,7 +557,7 @@ workers = 0
 [domains]
 intercept_domains = []
 exclude_domains = []
-wildcard_support = true
+enable_wildcard = true
 
 [targets]
 targets = []
@@ -586,7 +586,7 @@ enabled = true
 bind = "127.0.0.1:8081"
 health_endpoint = "/health"
 metrics_endpoint = "/metrics"
-prometheus_enabled = true
+enable_prometheus = true
 metrics_port = 9090
 health_check_port = 8081
 "#;

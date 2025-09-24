@@ -25,7 +25,7 @@ pub struct TlsConfig {
     /// Port to bind for HTTPS traffic
     pub port: u16,
     /// SNI (Server Name Indication) support
-    pub sni_enabled: bool,
+    pub enable_sni: bool,
     /// Multiple certificate configurations for SNI
     pub certificates: Option<Vec<CertificateConfig>>,
     /// TLS version constraints
@@ -42,7 +42,7 @@ impl Default for TlsConfig {
             cert_path: None,
             key_path: None,
             port: 8443,
-            sni_enabled: false,
+            enable_sni: false,
             certificates: None,
             min_version: Some(TlsVersion::V1_2),
             max_version: Some(TlsVersion::V1_3),
@@ -126,7 +126,7 @@ impl TlsManager {
 
     /// Create rustls ServerConfig
     async fn create_server_config(&self) -> DispaResult<Arc<ServerConfig>> {
-        if self.config.sni_enabled && self.config.certificates.is_some() {
+        if self.config.enable_sni && self.config.certificates.is_some() {
             self.create_sni_server_config().await
         } else {
             self.create_single_server_config().await
@@ -246,7 +246,7 @@ impl TlsManager {
 
         debug!("Validating TLS certificate files");
 
-        if self.config.sni_enabled && self.config.certificates.is_some() {
+        if self.config.enable_sni && self.config.certificates.is_some() {
             // Validate all SNI certificates
             let certificates = self.config.certificates.as_ref().unwrap();
             for cert_config in certificates {
@@ -305,7 +305,7 @@ impl TlsManager {
 
     /// Get SNI domain for a given hostname
     pub fn get_sni_domain(&self, hostname: &str) -> Option<String> {
-        if !self.config.sni_enabled || self.config.certificates.is_none() {
+        if !self.config.enable_sni || self.config.certificates.is_none() {
             return None;
         }
 
@@ -360,7 +360,7 @@ impl TlsConfig {
             return Ok(());
         }
 
-        if self.sni_enabled {
+        if self.enable_sni {
             if self.certificates.is_none() || self.certificates.as_ref().unwrap().is_empty() {
                 return Err(DispaError::config(
                     "SNI enabled but no certificates provided".to_string(),
@@ -402,7 +402,7 @@ impl TlsConfig {
             cert_path: Some("certs/localhost.crt".to_string()),
             key_path: Some("certs/localhost.key".to_string()),
             port: 8443,
-            sni_enabled: false,
+            enable_sni: false,
             certificates: None,
             min_version: Some(TlsVersion::V1_2),
             max_version: Some(TlsVersion::V1_3),
@@ -436,7 +436,7 @@ mod tests {
 
         assert!(!config.enabled);
         assert_eq!(config.port, 8443);
-        assert!(!config.sni_enabled);
+        assert!(!config.enable_sni);
         assert!(config.cert_path.is_none());
         assert!(config.key_path.is_none());
         assert!(config.certificates.is_none());
@@ -448,7 +448,7 @@ mod tests {
 
         assert!(config.enabled);
         assert_eq!(config.port, 8443);
-        assert!(!config.sni_enabled);
+        assert!(!config.enable_sni);
         assert_eq!(config.cert_path, Some("certs/localhost.crt".to_string()));
         assert_eq!(config.key_path, Some("certs/localhost.key".to_string()));
     }
@@ -484,10 +484,10 @@ mod tests {
     }
 
     #[test]
-    fn test_tls_config_validation_sni_enabled_no_certificates() {
+    fn test_tls_config_validation_enable_sni_no_certificates() {
         let config = TlsConfig {
             enabled: true,
-            sni_enabled: true,
+            enable_sni: true,
             ..Default::default()
         };
 
@@ -496,10 +496,10 @@ mod tests {
     }
 
     #[test]
-    fn test_tls_config_validation_sni_enabled_with_certificates() {
+    fn test_tls_config_validation_enable_sni_with_certificates() {
         let config = TlsConfig {
             enabled: true,
-            sni_enabled: true,
+            enable_sni: true,
             certificates: Some(vec![CertificateConfig {
                 domain: "example.com".to_string(),
                 cert_path: "example.crt".to_string(),
@@ -582,7 +582,7 @@ mod tests {
     #[test]
     fn test_sni_domain_matching() {
         let config = TlsConfig {
-            sni_enabled: true,
+            enable_sni: true,
             certificates: Some(vec![
                 CertificateConfig {
                     domain: "example.com".to_string(),
@@ -650,7 +650,7 @@ mod tests {
     fn test_certificate_config_empty_domain() {
         let config = TlsConfig {
             enabled: true,
-            sni_enabled: true,
+            enable_sni: true,
             certificates: Some(vec![CertificateConfig {
                 domain: "".to_string(),
                 cert_path: "cert.crt".to_string(),
@@ -668,7 +668,7 @@ mod tests {
     fn test_certificate_config_empty_paths() {
         let config = TlsConfig {
             enabled: true,
-            sni_enabled: true,
+            enable_sni: true,
             certificates: Some(vec![CertificateConfig {
                 domain: "example.com".to_string(),
                 cert_path: "".to_string(),
@@ -686,7 +686,7 @@ mod tests {
     fn test_tls_manager_with_sni_disabled() {
         let config = TlsConfig {
             enabled: true,
-            sni_enabled: false,
+            enable_sni: false,
             cert_path: Some("test.crt".to_string()),
             key_path: Some("test.key".to_string()),
             ..Default::default()
@@ -701,7 +701,7 @@ mod tests {
     #[test]
     fn test_wildcard_certificate_matching() {
         let config = TlsConfig {
-            sni_enabled: true,
+            enable_sni: true,
             certificates: Some(vec![CertificateConfig {
                 domain: "*.example.com".to_string(),
                 cert_path: "wildcard.crt".to_string(),

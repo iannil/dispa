@@ -36,7 +36,7 @@ mod tests {
                 bind: "127.0.0.1:0".parse().unwrap(), // OK in tests - valid address
                 health_endpoint: "/health".to_string(),
                 metrics_endpoint: "/metrics".to_string(),
-                prometheus_enabled: true,
+                enable_prometheus: true,
                 histogram_buckets: None,
                 capacity: None,
                 pushgateway: None,
@@ -62,7 +62,7 @@ mod tests {
                 bind: "127.0.0.1:0".parse().unwrap(), // OK in tests - valid address
                 health_endpoint: "/health".to_string(),
                 metrics_endpoint: "/metrics".to_string(),
-                prometheus_enabled: true,
+                enable_prometheus: true,
                 histogram_buckets: None,
                 capacity: None,
                 pushgateway: None,
@@ -95,7 +95,7 @@ mod tests {
                 bind: "127.0.0.1:9091".parse().unwrap(), // OK in tests - valid address
                 health_endpoint: "/health".to_string(),
                 metrics_endpoint: "/metrics".to_string(),
-                prometheus_enabled: true,
+                enable_prometheus: true,
                 histogram_buckets: None,
                 capacity: None,
                 pushgateway: None,
@@ -107,7 +107,7 @@ mod tests {
                 bind: "127.0.0.1:9092".parse().unwrap(), // OK in tests - valid address
                 health_endpoint: "/health".to_string(),
                 metrics_endpoint: "/metrics".to_string(),
-                prometheus_enabled: true,
+                enable_prometheus: true,
                 histogram_buckets: None,
                 capacity: None,
                 pushgateway: None,
@@ -119,7 +119,7 @@ mod tests {
                 bind: "127.0.0.1:9093".parse().unwrap(), // OK in tests - valid address
                 health_endpoint: "/health".to_string(),
                 metrics_endpoint: "/metrics".to_string(),
-                prometheus_enabled: true,
+                enable_prometheus: true,
                 histogram_buckets: None,
                 capacity: None,
                 pushgateway: None,
@@ -160,7 +160,7 @@ mod tests {
                     bind: "127.0.0.1:0".parse().unwrap(), // OK in tests - valid address
                     health_endpoint: "/health".to_string(),
                     metrics_endpoint: "/metrics".to_string(),
-                    prometheus_enabled: true,
+                    enable_prometheus: true,
                     histogram_buckets: None,
                     capacity: None,
                     pushgateway: None,
@@ -206,7 +206,7 @@ mod tests {
             bind: "127.0.0.1:0".parse().unwrap(),
             health_endpoint: "/health".to_string(),
             metrics_endpoint: "/metrics".to_string(),
-            prometheus_enabled: true,
+            enable_prometheus: true,
             histogram_buckets: None,
             capacity: None,
             pushgateway: None,

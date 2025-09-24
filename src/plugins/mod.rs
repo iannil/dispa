@@ -1,6 +1,8 @@
 #![allow(dead_code)]
 pub mod builtin;
 pub mod engine;
+pub mod executor; // 新增：插件执行器
+pub mod factory; // 新增：插件工厂和验证器
 pub mod traits;
 #[cfg(feature = "wasm-plugin")]
 pub mod wasm;
@@ -70,7 +72,7 @@ mod tests {
         PluginEngine::new(&config).unwrap() // OK in tests - valid config
     }
 
-    fn engine_with_request_entries(_entries: Vec<engine::PluginRequestEntry>) -> PluginEngine {
+    fn engine_with_request_entries(_entries: Vec<executor::PluginRequestEntry>) -> PluginEngine {
         // This is a test helper, so we'll create a minimal engine
         // In practice, you'd use PluginEngine::new() with proper config
         empty_plugins_engine()

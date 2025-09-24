@@ -13,11 +13,11 @@ pub struct CacheConfig {
     /// Cache policies for different content types
     pub policies: Vec<CachePolicy>,
     /// Enable ETag support
-    pub etag_enabled: bool,
+    pub enable_etag: bool,
     /// Cache key prefix
     pub key_prefix: Option<String>,
     /// Enable cache metrics
-    pub metrics_enabled: bool,
+    pub enable_metrics: bool,
 }
 
 impl Default for CacheConfig {
@@ -45,9 +45,9 @@ impl Default for CacheConfig {
                     no_cache_headers: vec!["authorization".to_string()],
                 },
             ],
-            etag_enabled: true,
+            enable_etag: true,
             key_prefix: None,
-            metrics_enabled: true,
+            enable_metrics: true,
         }
     }
 }

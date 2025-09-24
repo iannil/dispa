@@ -41,7 +41,7 @@ impl CachedProxyHandler {
                     config.clone(),
                 )));
                 let policy_engine = std::sync::Arc::new(PolicyEngine::new(config.clone()));
-                let etag_manager = std::sync::Arc::new(ETagManager::new(config.etag_enabled));
+                let etag_manager = std::sync::Arc::new(ETagManager::new(config.enable_etag));
                 (Some(cache), Some(policy_engine), Some(etag_manager))
             } else {
                 (None, None, None)
@@ -446,7 +446,7 @@ impl CachedProxyHandler {
                 return false;
             }
         };
-        if !cfg.wildcard_support {
+        if !cfg.enable_wildcard {
             return host == pattern;
         }
 
@@ -504,9 +504,9 @@ mod tests {
             enabled: true,
             max_size: 1024 * 1024, // 1MB
             default_ttl: 300,      // 5 minutes
-            etag_enabled: true,
+            enable_etag: true,
             key_prefix: Some("test_".to_string()),
-            metrics_enabled: true,
+            enable_metrics: true,
             policies: vec![CachePolicy {
                 name: "api_cache".to_string(),
                 pattern: CachePolicyPattern::PathPrefix("/api/".to_string()),
@@ -522,7 +522,7 @@ mod tests {
         DomainConfig {
             intercept_domains: vec!["test.example.com".to_string()],
             exclude_domains: Some(vec!["admin.test.example.com".to_string()]),
-            wildcard_support: true,
+            enable_wildcard: true,
         }
     }
 

@@ -352,9 +352,9 @@ mod tests {
                     no_cache_headers: vec!["authorization".to_string()],
                 },
             ],
-            etag_enabled: true,
+            enable_etag: true,
             key_prefix: Some("dispa".to_string()),
-            metrics_enabled: true,
+            enable_metrics: true,
         }
     }
 

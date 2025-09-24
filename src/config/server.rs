@@ -14,5 +14,5 @@ pub struct ServerConfig {
 pub struct DomainConfig {
     pub intercept_domains: Vec<String>,
     pub exclude_domains: Option<Vec<String>>,
-    pub wildcard_support: bool,
+    pub enable_wildcard: bool,
 }

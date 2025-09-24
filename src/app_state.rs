@@ -281,7 +281,7 @@ mod tests {
         let domain_config = DomainConfig {
             intercept_domains: vec!["test.com".to_string()],
             exclude_domains: Some(vec![]),
-            wildcard_support: true,
+            enable_wildcard: true,
         };
 
         let targets_config = TargetConfig::default();
@@ -314,7 +314,7 @@ mod tests {
         let domain_config = DomainConfig {
             intercept_domains: vec!["test.com".to_string()],
             exclude_domains: Some(vec![]),
-            wildcard_support: true,
+            enable_wildcard: true,
         };
 
         let targets_config = TargetConfig::default();

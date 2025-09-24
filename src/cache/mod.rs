@@ -113,8 +113,8 @@ mod tests {
         assert_eq!(config.max_size, 100 * 1024 * 1024);
         assert_eq!(config.default_ttl, 3600);
         assert_eq!(config.policies.len(), 2);
-        assert!(config.etag_enabled);
-        assert!(config.metrics_enabled);
+        assert!(config.enable_etag);
+        assert!(config.enable_metrics);
     }
 
     #[test]

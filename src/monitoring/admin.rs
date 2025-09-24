@@ -694,7 +694,7 @@ mod tests {
             domains: crate::config::DomainConfig {
                 intercept_domains: vec!["example.com".to_string()],
                 exclude_domains: None,
-                wildcard_support: true,
+                enable_wildcard: true,
             },
             targets: crate::config::TargetConfig {
                 targets: vec![],
@@ -733,7 +733,7 @@ mod tests {
         write!(temp, "{}", toml::to_string_pretty(&cfg).unwrap()).unwrap(); // OK in tests - valid config serialization
 
         // Build admin state
-        let domain = std::sync::Arc::new(std::sync::RwLock::new(crate::config::DomainConfig{ intercept_domains: vec!["example.com".into()], exclude_domains: None, wildcard_support: true }));
+        let domain = std::sync::Arc::new(std::sync::RwLock::new(crate::config::DomainConfig{ intercept_domains: vec!["example.com".into()], exclude_domains: None, enable_wildcard: true }));
         let lb_cfg = crate::config::TargetConfig{ targets: vec![], load_balancing: crate::config::LoadBalancingConfig{ algorithm: crate::config::LoadBalancingType::RoundRobin, lb_type: crate::config::LoadBalancingType::RoundRobin, sticky_sessions: Some(false) }, health_check: crate::config::HealthCheckConfig{ enabled:false, interval:30, timeout:10, healthy_threshold:2, unhealthy_threshold:3, threshold: 2 } };
         let lb = std::sync::Arc::new(tokio::sync::RwLock::new(crate::balancer::LoadBalancer::new_for_test(lb_cfg)));
         let routing = std::sync::Arc::new(tokio::sync::RwLock::new(None));

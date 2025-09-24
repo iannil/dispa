@@ -116,7 +116,7 @@ pub enum PluginStage {
 }
 
 /// Plugin error handling strategies
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 pub enum PluginErrorStrategy {
     Continue,
     Fail,

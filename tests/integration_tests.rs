@@ -22,7 +22,7 @@ fn create_integration_test_config() -> Config {
                 "*.api.example.com".to_string(),
             ],
             exclude_domains: Some(vec!["admin.api.example.com".to_string()]),
-            wildcard_support: true,
+            enable_wildcard: true,
         },
         targets: TargetConfig {
             targets: vec![
@@ -73,7 +73,7 @@ fn create_integration_test_config() -> Config {
             health_check_port: 8081,
             metrics_endpoint: "/metrics".to_string(),
             health_endpoint: "/health".to_string(),
-            prometheus_enabled: false,
+            enable_prometheus: false,
             pushgateway: None,
             histogram_buckets: None,
             capacity: Default::default(),
@@ -105,7 +105,7 @@ fn create_minimal_test_config() -> Config {
         domains: DomainConfig {
             intercept_domains: vec!["minimal.com".to_string()],
             exclude_domains: None,
-            wildcard_support: false,
+            enable_wildcard: false,
         },
         targets: TargetConfig {
             targets: vec![Target {
@@ -143,7 +143,7 @@ fn create_minimal_test_config() -> Config {
             health_check_port: 8081,
             metrics_endpoint: "/metrics".to_string(),
             health_endpoint: "/health".to_string(),
-            prometheus_enabled: false,
+            enable_prometheus: false,
             pushgateway: None,
             histogram_buckets: None,
             capacity: Default::default(),
@@ -271,7 +271,7 @@ async fn test_domain_configuration_integration() {
             DomainConfig {
                 intercept_domains: vec!["simple.com".to_string()],
                 exclude_domains: None,
-                wildcard_support: false,
+                enable_wildcard: false,
             },
             // Multiple domains
             DomainConfig {
@@ -281,7 +281,7 @@ async fn test_domain_configuration_integration() {
                     "third.com".to_string(),
                 ],
                 exclude_domains: None,
-                wildcard_support: false,
+                enable_wildcard: false,
             },
             // Wildcard with exclusions
             DomainConfig {
@@ -290,7 +290,7 @@ async fn test_domain_configuration_integration() {
                     "admin.example.com".to_string(),
                     "internal.example.com".to_string(),
                 ]),
-                wildcard_support: true,
+                enable_wildcard: true,
             },
             // Mixed patterns
             DomainConfig {
@@ -300,7 +300,7 @@ async fn test_domain_configuration_integration() {
                     "another.exact.org".to_string(),
                 ],
                 exclude_domains: Some(vec!["private.wildcard.com".to_string()]),
-                wildcard_support: true,
+                enable_wildcard: true,
             },
         ];
 
@@ -569,7 +569,7 @@ async fn test_complete_configuration_integration() {
                     "private.api.service.com".to_string(),
                     "admin.main.service.com".to_string(),
                 ]),
-                wildcard_support: true,
+                enable_wildcard: true,
             },
             targets: TargetConfig {
                 targets: vec![
@@ -631,7 +631,7 @@ async fn test_complete_configuration_integration() {
                 health_check_port: 8081,
                 metrics_endpoint: "/metrics".to_string(),
                 health_endpoint: "/health".to_string(),
-                prometheus_enabled: false,
+                enable_prometheus: false,
                 pushgateway: None,
                 histogram_buckets: None,
                 capacity: Default::default(),
@@ -688,7 +688,7 @@ async fn test_configuration_edge_cases_integration() {
             domains: DomainConfig {
                 intercept_domains: vec!["a.b".to_string()], // Minimal valid domain
                 exclude_domains: None,
-                wildcard_support: false,
+                enable_wildcard: false,
             },
             targets: TargetConfig {
                 targets: vec![Target {
@@ -730,7 +730,7 @@ async fn test_configuration_edge_cases_integration() {
                 health_check_port: 1025, // Minimum non-privileged port + 1
                 metrics_endpoint: "/metrics".to_string(),
                 health_endpoint: "/health".to_string(),
-                prometheus_enabled: false,
+                enable_prometheus: false,
                 pushgateway: None,
                 histogram_buckets: None,
                 capacity: Default::default(),

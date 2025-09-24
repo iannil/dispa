@@ -31,6 +31,27 @@ pub struct LoadBalancer {
 
 impl LoadBalancer {
     /// Create a new load balancer with the given configuration
+    ///
+    /// This initializes a load balancer with the specified target configuration
+    /// and starts health monitoring if enabled. The load balancer will use the
+    /// configured algorithm (Round Robin, Weighted, Random, or Least Connections)
+    /// to distribute requests.
+    ///
+    /// # Parameters
+    ///
+    /// * `config` - Target configuration including targets and load balancing settings
+    ///
+    /// # Returns
+    ///
+    /// A new LoadBalancer instance ready to serve requests
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dispa::config::TargetConfig;
+    /// let config = TargetConfig::default();
+    /// let load_balancer = LoadBalancer::new(config);
+    /// ```
     pub fn new(config: TargetConfig) -> Self {
         let health_checker = HealthChecker::new(config.health_check.clone());
 
@@ -114,6 +135,24 @@ impl LoadBalancer {
         }
     }
 
+    /// Select the next target for load balancing
+    ///
+    /// This method chooses a target based on the configured load balancing algorithm
+    /// and current health status. It will only return healthy targets unless health
+    /// checking is disabled.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Some(Target)` if a healthy target is available, `None` otherwise.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let target = load_balancer.get_target().await;
+    /// if let Some(target) = target {
+    ///     println!("Selected target: {}", target.name);
+    /// }
+    /// ```
     pub async fn get_target(&self) -> Option<Target> {
         let healthy_targets = self.get_healthy_targets().await;
 
@@ -153,6 +192,14 @@ impl LoadBalancer {
         selected
     }
 
+    /// Get all currently healthy targets
+    ///
+    /// Returns a list of targets that are currently passing health checks.
+    /// If health checking is disabled, returns all configured targets.
+    ///
+    /// # Returns
+    ///
+    /// Vector of healthy targets
     pub async fn get_healthy_targets(&self) -> Vec<Target> {
         let mut healthy_targets = Vec::new();
 
@@ -170,11 +217,26 @@ impl LoadBalancer {
         healthy_targets
     }
 
+    /// Decrement the connection count for a target
+    ///
+    /// This should be called when a connection to a target is closed
+    /// to maintain accurate connection statistics for load balancing.
+    ///
+    /// # Parameters
+    ///
+    /// * `target_name` - Name of the target to update
     pub async fn decrement_connection_count(&self, target_name: &str) {
         let mut stats = self.connection_stats.write().await;
         MetricsCollector::decrement_connection_count(&mut stats, target_name);
     }
 
+    /// Record the result of a request for metrics tracking
+    ///
+    /// # Parameters
+    ///
+    /// * `target_name` - Name of the target that handled the request
+    /// * `success` - Whether the request was successful
+    /// * `response_time` - Time taken to complete the request
     pub async fn record_request_result(
         &self,
         target_name: &str,
@@ -185,15 +247,34 @@ impl LoadBalancer {
         MetricsCollector::record_request_result(&mut stats, target_name, success, response_time);
     }
 
+    /// Get health status of all targets
+    ///
+    /// # Returns
+    ///
+    /// HashMap mapping target names to their current health status
     pub async fn get_health_status(&self) -> HashMap<String, HealthStatus> {
         self.health_checker.get_all_health_status().await
     }
 
+    /// Get connection statistics for all targets
+    ///
+    /// # Returns
+    ///
+    /// HashMap mapping target names to their connection statistics
     pub async fn get_connection_stats(&self) -> HashMap<String, ConnectionStats> {
         let stats = self.connection_stats.read().await;
         stats.clone()
     }
 
+    /// Get detailed information about a specific target
+    ///
+    /// # Parameters
+    ///
+    /// * `target_name` - Name of the target to query
+    ///
+    /// # Returns
+    ///
+    /// `Some(TargetInfo)` if the target exists, `None` otherwise
     pub async fn get_target_info(&self, target_name: &str) -> Option<TargetInfo> {
         let health_status = self.health_checker.get_target_status(target_name).await;
         let stats = self.connection_stats.read().await;
@@ -209,10 +290,26 @@ impl LoadBalancer {
             })
     }
 
+    /// Force an immediate health check of all targets
+    ///
+    /// This bypasses the normal health check interval and immediately
+    /// checks all targets.
     pub async fn force_health_check(&self) {
         self.health_checker.force_health_check(&self.targets).await;
     }
 
+    /// Get a target by name
+    ///
+    /// Searches for a target with the given name, preferring healthy targets
+    /// but falling back to any target with the name if needed.
+    ///
+    /// # Parameters
+    ///
+    /// * `target_name` - Name of the target to find
+    ///
+    /// # Returns
+    ///
+    /// `Some(Target)` if found, `None` otherwise
     pub async fn get_target_by_name(&self, target_name: &str) -> Option<Target> {
         // First check if the target exists in healthy targets
         let healthy_targets = self.get_healthy_targets().await;
@@ -225,6 +322,11 @@ impl LoadBalancer {
             })
     }
 
+    /// Get a summary of load balancer status and metrics
+    ///
+    /// # Returns
+    ///
+    /// LoadBalancerSummary containing overall statistics and status
     pub async fn get_summary(&self) -> LoadBalancerSummary {
         let health_status = self.get_health_status().await;
         let connection_stats = self.get_connection_stats().await;

@@ -53,7 +53,41 @@ impl Default for CircuitBreakerConfig {
     }
 }
 
-/// Circuit breaker implementation
+/// Circuit breaker implementation for fault tolerance
+///
+/// Provides automatic failure detection and recovery mechanisms to prevent
+/// cascading failures in distributed systems. The circuit breaker monitors
+/// request success/failure rates and can temporarily block requests when
+/// a service appears to be failing.
+///
+/// # States
+///
+/// - **Closed**: Normal operation, all requests pass through
+/// - **Open**: Service appears down, requests are blocked
+/// - **Half-Open**: Testing if service has recovered
+///
+/// # Examples
+///
+/// ```
+/// use std::time::Duration;
+/// use dispa::circuit_breaker::{CircuitBreaker, CircuitBreakerConfig};
+///
+/// let config = CircuitBreakerConfig {
+///     failure_threshold: 5,
+///     success_threshold: 3,
+///     timeout: Duration::from_secs(60),
+///     time_window: Duration::from_secs(60),
+///     min_requests: 10,
+/// };
+///
+/// let cb = CircuitBreaker::new("my-service".to_string(), config);
+///
+/// // Use the circuit breaker to protect a call
+/// let result = cb.call(|| async {
+///     // Your service call here
+///     Ok("success")
+/// }).await;
+/// ```
 #[derive(Debug)]
 pub struct CircuitBreaker {
     name: String,
@@ -69,7 +103,25 @@ pub struct CircuitBreaker {
 
 #[allow(dead_code)]
 impl CircuitBreaker {
-    /// Create a new circuit breaker
+    /// Create a new circuit breaker with custom configuration
+    ///
+    /// # Parameters
+    ///
+    /// * `name` - Unique identifier for this circuit breaker (used in logs)
+    /// * `config` - Configuration specifying thresholds and timeouts
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let config = CircuitBreakerConfig {
+    ///     failure_threshold: 10,
+    ///     success_threshold: 5,
+    ///     timeout: Duration::from_secs(30),
+    ///     time_window: Duration::from_secs(60),
+    ///     min_requests: 5,
+    /// };
+    /// let cb = CircuitBreaker::new("api-service".to_string(), config);
+    /// ```
     pub fn new(name: String, config: CircuitBreakerConfig) -> Self {
         let now = now_timestamp();
         Self {
@@ -86,11 +138,56 @@ impl CircuitBreaker {
     }
 
     /// Create a circuit breaker with default configuration
+    ///
+    /// Uses reasonable defaults for most use cases:
+    /// - Failure threshold: 5 failures
+    /// - Success threshold: 3 successes to recover
+    /// - Timeout: 60 seconds before retry
+    /// - Time window: 60 seconds for failure counting
+    /// - Minimum requests: 10 before considering failure rate
+    ///
+    /// # Parameters
+    ///
+    /// * `name` - Unique identifier for this circuit breaker
     pub fn with_defaults(name: String) -> Self {
         Self::new(name, CircuitBreakerConfig::default())
     }
 
     /// Execute a function with circuit breaker protection
+    ///
+    /// This is the main method for using the circuit breaker. It will:
+    /// 1. Check if the circuit allows the request (based on current state)
+    /// 2. Execute the provided function if allowed
+    /// 3. Record the result (success/failure) for future decisions
+    /// 4. Update the circuit breaker state based on the outcome
+    ///
+    /// # Parameters
+    ///
+    /// * `f` - A closure that returns a Future yielding a `DispaResult<T>`
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(T)` - The function executed successfully
+    /// * `Err(DispaError::CircuitBreakerOpen)` - Circuit is open, request blocked
+    /// * `Err(other)` - The function failed with an error
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dispa::circuit_breaker::CircuitBreaker;
+    ///
+    /// let cb = CircuitBreaker::with_defaults("my-service".to_string());
+    ///
+    /// let result = cb.call(|| async {
+    ///     // Your potentially failing operation
+    ///     make_api_call().await
+    /// }).await;
+    ///
+    /// match result {
+    ///     Ok(value) => println!("Success: {:?}", value),
+    ///     Err(e) => println!("Failed: {}", e),
+    /// }
+    /// ```
     pub async fn call<F, T, Fut>(&self, f: F) -> DispaResult<T>
     where
         F: FnOnce() -> Fut,

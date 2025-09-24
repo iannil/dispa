@@ -9,7 +9,7 @@ use tracing::{debug, error, info, warn};
 use super::handler::ProxyHandler;
 use super::http_client;
 use crate::balancer::LoadBalancer;
-use crate::config::Config;
+use crate::config::{Config, DomainConfig};
 use crate::error::DispaResult;
 use crate::logger::TrafficLogger;
 use crate::plugins::{PluginEngine, SharedPluginEngine};
@@ -302,7 +302,7 @@ mod tests {
             domains: DomainConfig {
                 intercept_domains: vec!["test.example.com".to_string()],
                 exclude_domains: Some(vec!["admin.test.example.com".to_string()]),
-                wildcard_support: true,
+                enable_wildcard: true,
             },
             targets: TargetConfig {
                 targets: vec![Target {

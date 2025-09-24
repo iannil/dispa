@@ -172,7 +172,7 @@ impl RequestProcessor {
         // Check exclude list first
         if let Some(ref exclude_domains) = cfg.exclude_domains {
             for exclude_domain in exclude_domains {
-                if cfg.wildcard_support && exclude_domain.starts_with("*.") {
+                if cfg.enable_wildcard && exclude_domain.starts_with("*.") {
                     let pattern = &exclude_domain[2..];
                     if host_without_port.ends_with(pattern) {
                         return false;
@@ -185,7 +185,7 @@ impl RequestProcessor {
 
         // Check intercept list
         for intercept_domain in &cfg.intercept_domains {
-            if cfg.wildcard_support && intercept_domain.starts_with("*.") {
+            if cfg.enable_wildcard && intercept_domain.starts_with("*.") {
                 let pattern = &intercept_domain[2..];
                 if host_without_port.ends_with(pattern) {
                     return true;
@@ -242,7 +242,7 @@ mod tests {
         let domain_config = Arc::new(StdRwLock::new(DomainConfig {
             intercept_domains: vec!["example.com".to_string()],
             exclude_domains: Some(vec![]),
-            wildcard_support: true,
+            enable_wildcard: true,
         }));
 
         let load_balancer = Arc::new(TokioRwLock::new(LoadBalancer::new(TargetConfig::default())));

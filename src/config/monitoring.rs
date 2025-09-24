@@ -8,7 +8,7 @@ pub struct MonitoringConfig {
     pub bind: SocketAddr,
     pub health_endpoint: String,
     pub metrics_endpoint: String,
-    pub prometheus_enabled: bool,
+    pub enable_prometheus: bool,
     pub histogram_buckets: Option<HistogramBucketsConfig>,
     /// Resource capacity monitoring
     pub capacity: Option<CapacityConfig>,
@@ -118,7 +118,7 @@ impl Default for MonitoringConfig {
             bind: "127.0.0.1:8081".parse().unwrap(),
             health_endpoint: "/health".to_string(),
             metrics_endpoint: "/metrics".to_string(),
-            prometheus_enabled: true,
+            enable_prometheus: true,
             histogram_buckets: Some(HistogramBucketsConfig::default()),
             capacity: Some(CapacityConfig::default()),
             pushgateway: None,

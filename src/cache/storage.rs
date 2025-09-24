@@ -31,7 +31,30 @@ pub struct InMemoryCache {
 }
 
 impl InMemoryCache {
-    /// Create a new in-memory cache
+    /// Create a new in-memory cache with the specified configuration
+    ///
+    /// This initializes a new cache instance with the given configuration.
+    /// If caching is enabled, it will start a background cleanup task to
+    /// remove expired entries.
+    ///
+    /// # Parameters
+    ///
+    /// * `config` - Cache configuration including size limits and TTL settings
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dispa::cache::{CacheConfig, InMemoryCache};
+    ///
+    /// let config = CacheConfig {
+    ///     enabled: true,
+    ///     max_size: 1024 * 1024, // 1MB
+    ///     default_ttl: 3600,     // 1 hour
+    ///     // ... other fields
+    /// };
+    ///
+    /// let cache = InMemoryCache::new(config);
+    /// ```
     pub fn new(config: CacheConfig) -> Self {
         let cache = Self {
             storage: Arc::new(RwLock::new(HashMap::new())),
@@ -49,7 +72,29 @@ impl InMemoryCache {
         cache
     }
 
-    /// Get a cached entry
+    /// Retrieve a cached entry by key
+    ///
+    /// Returns the cached entry if it exists and hasn't expired.
+    /// Automatically records cache hit/miss metrics.
+    ///
+    /// # Parameters
+    ///
+    /// * `key` - The cache key to look up
+    ///
+    /// # Returns
+    ///
+    /// * `Some(CacheEntry)` - If the entry exists and is not expired
+    /// * `None` - If the entry doesn't exist, is expired, or caching is disabled
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let entry = cache.get("user:123").await;
+    /// match entry {
+    ///     Some(cached) => println!("Found cached data"),
+    ///     None => println!("Cache miss or expired"),
+    /// }
+    /// ```
     pub async fn get(&self, key: &str) -> Option<CacheEntry> {
         if !self.config.enabled {
             return None;
@@ -73,6 +118,36 @@ impl InMemoryCache {
     }
 
     /// Store an entry in the cache
+    ///
+    /// Adds or updates a cache entry. If the cache is full, it may evict
+    /// older entries using LRU strategy. The entry will automatically
+    /// expire after its configured TTL.
+    ///
+    /// # Parameters
+    ///
+    /// * `key` - Unique identifier for the cache entry
+    /// * `entry` - The cache entry to store (contains data, TTL, etc.)
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - Entry was successfully stored
+    /// * `Err(e)` - Storage failed (e.g., serialization issues)
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dispa::cache::CacheEntry;
+    /// use std::time::{Duration, SystemTime};
+    ///
+    /// let entry = CacheEntry {
+    ///     data: b"response data".to_vec(),
+    ///     created_at: SystemTime::now(),
+    ///     ttl: Duration::from_secs(300), // 5 minutes
+    ///     // ... other fields
+    /// };
+    ///
+    /// cache.put("api:response:123".to_string(), entry).await?;
+    /// ```
     pub async fn put(&self, key: String, entry: CacheEntry) -> Result<()> {
         if !self.config.enabled {
             return Ok(());
@@ -412,9 +487,9 @@ mod tests {
             max_size: 1024, // 1KB for testing
             default_ttl: 60,
             policies: vec![],
-            etag_enabled: true,
+            enable_etag: true,
             key_prefix: None,
-            metrics_enabled: true,
+            enable_metrics: true,
         }
     }
 

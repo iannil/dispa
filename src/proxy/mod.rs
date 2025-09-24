@@ -37,8 +37,10 @@
 pub mod cached_handler; // 缓存增强的请求处理器
 pub mod handler; // 核心HTTP请求处理器
 pub mod http_client; // HTTP客户端连接池管理
+pub mod http_server; // HTTP/HTTPS服务器管理器
 pub mod request_forwarder; // 请求转发引擎
 pub mod request_processor; // 请求处理流水线
 pub mod server; // 主代理服务器实现
+pub mod server_core; // 代理服务器核心组件
 
 pub use server::ProxyServer;
