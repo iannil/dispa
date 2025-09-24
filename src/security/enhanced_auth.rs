@@ -17,6 +17,7 @@
 )]
 
 // Re-export the new modular components for backward compatibility
+#[allow(unused_imports)]
 pub use super::auth::{
     audit::AuditLogger,
     auth_core::{AuthCore, AuthResult, AuthenticatedUser},

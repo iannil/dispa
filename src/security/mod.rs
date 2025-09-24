@@ -10,6 +10,7 @@ pub mod responses;
 pub mod utils;
 
 // Re-exports for backward compatibility
+#[allow(unused_imports)]
 pub use config::{
     AccessControlConfig, AuthConfig, AuthMode, DdosConfig, GlobalRateLimitConfig, JwtConfig,
     RsaJwk, SecurityConfig,

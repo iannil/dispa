@@ -301,7 +301,7 @@ pub type SharedSecurity = std::sync::Arc<tokio::sync::RwLock<Option<SecurityMana
 
 #[cfg(test)]
 mod tests {
-    use super::super::utils::crypto::base64_encode;
+    use super::super::utils::crypto::{base64_encode, hmac_sha256};
     use super::*;
     use hyper::{Request, StatusCode};
     use std::net::IpAddr;
