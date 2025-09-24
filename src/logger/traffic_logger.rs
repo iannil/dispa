@@ -91,7 +91,9 @@ impl TrafficLogger {
                 let file_logger = Arc::new(FileLogger::new(file_config.clone()));
                 file_logger.initialize().await?;
                 file_logger.ensure_csv_header().await?;
-                *self.file_logger.write().unwrap() = Some(file_logger);
+                *self.file_logger.write()
+                    .map_err(|e| crate::error::DispaError::internal(format!("Failed to write file_logger lock: {}", e)))?
+                    = Some(file_logger);
                 info!("File logging initialized successfully");
             }
         }
@@ -126,7 +128,7 @@ impl TrafficLogger {
         user_agent: Option<&str>,
         error_message: Option<&str>,
     ) -> DispaResult<()> {
-        if !self.config.read().unwrap().enabled {
+        if !self.read_config()?.enabled {
             return Ok(());
         }
 
@@ -147,10 +149,7 @@ impl TrafficLogger {
         };
 
         // 读取日志类型而不需要clone整个配置
-        let log_type = {
-            let config = self.config.read().unwrap();
-            config.log_type
-        };
+        let log_type = self.read_config()?.log_type;
 
         match log_type {
             LoggingType::Database => {
@@ -192,7 +191,7 @@ impl TrafficLogger {
         let labels = [("type", "database")];
 
         // Clone the Arc to avoid holding the lock across await
-        let db_manager = self.db_manager.read().unwrap().clone();
+        let db_manager = self.read_db_manager()?;
 
         if let Some(db_manager) = db_manager {
             let result = db_manager.insert_log(log_entry).await;
@@ -223,7 +222,7 @@ impl TrafficLogger {
         let labels = [("type", "file")];
 
         // Clone the Arc to avoid holding the lock across await
-        let file_logger = self.file_logger.read().unwrap().clone();
+        let file_logger = self.read_file_logger()?;
 
         if let Some(file_logger) = file_logger {
             let result = file_logger.write_log(log_entry).await;
@@ -246,7 +245,7 @@ impl TrafficLogger {
 
     /// Get traffic statistics for the last N hours
     pub async fn get_traffic_stats(&self, hours: i64) -> DispaResult<TrafficStats> {
-        let db_manager = self.db_manager.read().unwrap().clone();
+        let db_manager = self.read_db_manager()?;
         if let Some(db_manager) = db_manager {
             db_manager.get_traffic_stats(hours).await
         } else {
@@ -256,7 +255,7 @@ impl TrafficLogger {
 
     /// Get traffic statistics by target for the last N hours
     pub async fn get_traffic_by_target(&self, hours: i64) -> DispaResult<Vec<TargetTrafficStats>> {
-        let db_manager = self.db_manager.read().unwrap().clone();
+        let db_manager = self.read_db_manager()?;
         if let Some(db_manager) = db_manager {
             db_manager.get_traffic_by_target(hours).await
         } else {
@@ -267,7 +266,7 @@ impl TrafficLogger {
     /// Get recent error logs
     #[allow(dead_code)]
     pub async fn get_error_logs(&self, limit: i64) -> DispaResult<Vec<TrafficLog>> {
-        let db_manager = self.db_manager.read().unwrap().clone();
+        let db_manager = self.read_db_manager()?;
         if let Some(db_manager) = db_manager {
             db_manager.get_error_logs(limit).await
         } else {
@@ -278,13 +277,12 @@ impl TrafficLogger {
     /// Manually trigger cleanup of old logs
     #[allow(dead_code)]
     pub async fn cleanup_old_logs(&self) -> DispaResult<()> {
-        let retention_days = self.config.read().unwrap().retention_days;
+        let retention_days = self.read_config()?.retention_days;
 
         if let Some(days) = retention_days {
             if days > 0 {
-                let db_manager: Option<Arc<DatabaseManager>> =
-                    self.db_manager.read().unwrap().clone();
-                let file_logger: Option<Arc<FileLogger>> = self.file_logger.read().unwrap().clone();
+                let db_manager: Option<Arc<DatabaseManager>> = self.read_db_manager()?;
+                let file_logger: Option<Arc<FileLogger>> = self.read_file_logger()?;
 
                 // Cleanup database logs
                 if let Some(ref db) = db_manager {
@@ -318,14 +316,20 @@ impl TrafficLogger {
         info!("Reconfiguring traffic logger");
 
         // Update config
-        *self.config.write().unwrap() = new_config.clone();
+        *self.config.write()
+            .map_err(|e| crate::error::DispaError::internal(format!("Failed to write config lock: {}", e)))?
+            = new_config.clone();
 
         // Stop existing cleanup task
         self.stop_cleanup_task().await;
 
         // Clear existing loggers
-        *self.db_manager.write().unwrap() = None;
-        *self.file_logger.write().unwrap() = None;
+        *self.db_manager.write()
+            .map_err(|e| crate::error::DispaError::internal(format!("Failed to write db_manager lock: {}", e)))?
+            = None;
+        *self.file_logger.write()
+            .map_err(|e| crate::error::DispaError::internal(format!("Failed to write file_logger lock: {}", e)))?
+            = None;
 
         // Reinitialize with new config
         self.initialize_shared().await?;
@@ -337,18 +341,22 @@ impl TrafficLogger {
     /// Start the cleanup task
     async fn start_cleanup_task(&self, retention_days: u32) {
         let cleanup_manager = CleanupManager::new(retention_days);
-        let db_manager = self.db_manager.read().unwrap().clone();
-        let file_logger = self.file_logger.read().unwrap().clone();
+        let db_manager = self.read_db_manager().unwrap_or(None);
+        let file_logger = self.read_file_logger().unwrap_or(None);
 
         cleanup_manager.start(db_manager, file_logger).await;
-        *self.cleanup_manager.write().unwrap() = Some(cleanup_manager);
+        if let Ok(mut cleanup_guard) = self.cleanup_manager.write() {
+            *cleanup_guard = Some(cleanup_manager);
+        }
     }
 
     /// Stop the cleanup task
     async fn stop_cleanup_task(&self) {
-        let cleanup_manager = { self.cleanup_manager.write().unwrap().take() };
-        if let Some(cleanup_manager) = cleanup_manager {
-            cleanup_manager.stop().await;
+        if let Ok(mut cleanup_guard) = self.cleanup_manager.write() {
+            let cleanup_manager = cleanup_guard.take();
+            if let Some(cleanup_manager) = cleanup_manager {
+                cleanup_manager.stop().await;
+            }
         }
     }
 }
@@ -361,7 +369,7 @@ mod tests {
     use tempfile::TempDir;
 
     fn create_test_config_db_only() -> (LoggingConfig, TempDir) {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().unwrap(); // OK in tests - expected to succeed
 
         (
             LoggingConfig {
@@ -380,7 +388,7 @@ mod tests {
     }
 
     fn create_test_config_file_only() -> (LoggingConfig, TempDir) {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().unwrap(); // OK in tests - expected to succeed
 
         (
             LoggingConfig {
@@ -414,7 +422,7 @@ mod tests {
     async fn test_traffic_logger_log_request() {
         let (config, _temp_dir) = create_test_config_db_only();
         let mut logger = TrafficLogger::new(config);
-        logger.initialize().await.unwrap();
+        logger.initialize().await.unwrap(); // OK in tests - expected to succeed
 
         let request_id = Uuid::new_v4();
         let client_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
