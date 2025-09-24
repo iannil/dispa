@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+pub mod auth;
 pub mod enhanced_auth;
 
 use hyper::{Body, Request, Response, StatusCode};
