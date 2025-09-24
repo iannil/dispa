@@ -523,7 +523,7 @@ mod tests {
             cache.put(key.clone(), entry).await.unwrap(); // OK in tests - cache put expected to succeed
 
             // Remove entry
-            let removed = cache.remove(&key).await.unwrap();
+            let removed = cache.remove(&key).await.unwrap(); // OK in tests - cache remove expected to succeed
             assert_eq!(removed.body, b"test data");
 
             // Should not find entry after removal
@@ -547,7 +547,7 @@ mod tests {
             // Add multiple entries
             for i in 0..3 {
                 let entry = create_test_entry(&format!("data{}", i), 60);
-                cache.put(format!("key{}", i), entry).await.unwrap();
+                cache.put(format!("key{}", i), entry).await.unwrap(); // OK in tests - cache put expected to succeed
             }
 
             let stats_before = cache.stats().await;
@@ -576,7 +576,7 @@ mod tests {
             // Add entries until we exceed the limit
             for i in 0..4 {
                 let entry = create_test_entry(&large_data, 60);
-                cache.put(format!("key{}", i), entry).await.unwrap();
+                cache.put(format!("key{}", i), entry).await.unwrap(); // OK in tests - cache put expected to succeed
             }
 
             let stats = cache.stats().await;
@@ -643,8 +643,8 @@ mod tests {
             let entry = create_test_entry("test data", 60);
 
             // Perform various operations
-            cache.put("key1".to_string(), entry.clone()).await.unwrap();
-            cache.put("key2".to_string(), entry).await.unwrap();
+            cache.put("key1".to_string(), entry.clone()).await.unwrap(); // OK in tests - cache put expected to succeed
+            cache.put("key2".to_string(), entry).await.unwrap(); // OK in tests - cache put expected to succeed
 
             cache.get("key1").await; // hit
             cache.get("key2").await; // hit
@@ -671,7 +671,7 @@ mod tests {
             let cache = InMemoryCache::new(config);
 
             let entry = create_test_entry("test data", 60);
-            cache.put("key1".to_string(), entry).await.unwrap();
+            cache.put("key1".to_string(), entry).await.unwrap(); // OK in tests - cache put expected to succeed
 
             let stats = cache.stats().await;
             assert_eq!(stats.entry_count, 1);
