@@ -164,6 +164,7 @@ impl ConsistentHashRing {
 /// Geographic routing manager
 pub struct GeoRoutingManager {
     regions: HashMap<String, Vec<String>>,
+    #[allow(dead_code)]
     backend_regions: HashMap<String, String>,
     fallback_strategy: GeoFallbackStrategy,
 }
@@ -244,6 +245,7 @@ pub struct SessionStickyManager {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct SessionInfo {
     backend_id: String,
     last_access: Instant,
@@ -267,7 +269,7 @@ impl SessionStickyManager {
     ) -> Option<String> {
         // Periodic cleanup of expired sessions
         let counter = self.cleanup_counter.fetch_add(1, Ordering::Relaxed);
-        if counter % 100 == 0 {
+        if counter.is_multiple_of(100) {
             self.cleanup_expired_sessions();
         }
 
@@ -381,6 +383,7 @@ struct BackendStats {
     response_times: Vec<u64>, // Rolling window of response times in milliseconds
     success_count: u64,
     error_count: u64,
+    #[allow(dead_code)]
     current_weight: f64,
     original_weight: u32,
     last_updated: Instant,
@@ -500,14 +503,16 @@ impl AdaptiveWeightedBalancer {
 /// Priority-based load balancer with tier failover
 pub struct PriorityLoadBalancer {
     tiers: Vec<PriorityTier>,
+    #[allow(dead_code)]
     failover_threshold: f64,
     tier_stats: HashMap<String, TierStats>,
 }
 
 #[derive(Debug)]
-struct TierStats {
+pub struct TierStats {
     healthy_backends: usize,
     total_backends: usize,
+    #[allow(dead_code)]
     last_check: Instant,
 }
 

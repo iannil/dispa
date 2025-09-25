@@ -334,7 +334,7 @@ impl PerformanceProfiler {
 }
 
 #[derive(Debug, Clone, Serialize)]
-struct ProfileReport {
+pub struct ProfileReport {
     sample_count: usize,
     avg_cpu_usage: f64,
     max_cpu_usage: f64,
@@ -483,11 +483,15 @@ impl Clone for Connection {
     }
 }
 
+/// Type alias for complex object pool type
+type ObjectPool = Arc<RwLock<HashMap<String, Vec<Box<dyn std::any::Any + Send + Sync>>>>>;
+
 /// Memory pool manager
 struct MemoryPool {
     config: MemoryOptimizationConfig,
     buffer_pool: Arc<RwLock<Vec<Vec<u8>>>>,
-    object_pool: Arc<RwLock<HashMap<String, Vec<Box<dyn std::any::Any + Send + Sync>>>>>,
+    #[allow(dead_code)]
+    object_pool: ObjectPool,
 }
 
 impl MemoryPool {
@@ -547,6 +551,7 @@ struct StressTestMetrics {
     total_response_time: AtomicU64,
     min_response_time: AtomicU64,
     max_response_time: AtomicU64,
+    #[allow(dead_code)]
     active_connections: AtomicUsize,
 }
 
@@ -632,7 +637,7 @@ impl StressTestMetrics {
 }
 
 #[derive(Debug, Clone, Serialize)]
-struct StressTestReport {
+pub struct StressTestReport {
     total_requests: u64,
     successful_requests: u64,
     failed_requests: u64,
@@ -724,7 +729,9 @@ impl StressTester {
 struct PerformanceMetrics {
     request_count: AtomicU64,
     response_times: Arc<RwLock<Vec<f64>>>,
+    #[allow(dead_code)]
     cpu_usage_samples: Arc<RwLock<Vec<f64>>>,
+    #[allow(dead_code)]
     memory_usage_samples: Arc<RwLock<Vec<u64>>>,
     error_count: AtomicU64,
 }
@@ -789,7 +796,7 @@ impl PerformanceMetrics {
 }
 
 #[derive(Debug, Clone, Serialize)]
-struct PerformanceSummary {
+pub struct PerformanceSummary {
     total_requests: u64,
     total_errors: u64,
     avg_response_time: f64,

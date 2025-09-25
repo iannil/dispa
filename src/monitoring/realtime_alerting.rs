@@ -189,7 +189,7 @@ struct MetricsStore {
 }
 
 #[derive(Debug, Clone, Serialize)]
-struct MetricValue {
+pub struct MetricValue {
     value: f64,
     timestamp: SystemTime,
     labels: HashMap<String, String>,
@@ -284,7 +284,7 @@ struct AlertState {
 }
 
 #[derive(Debug, Clone, Serialize)]
-struct AlertEvent {
+pub struct AlertEvent {
     rule_id: String,
     rule_name: String,
     severity: AlertSeverity,
@@ -297,6 +297,7 @@ struct AlertEvent {
 
 enum NotificationSender {
     Email {
+        #[allow(dead_code)]
         config: HashMap<String, String>,
     },
     Webhook {
@@ -543,13 +544,13 @@ impl Dashboard {
 }
 
 #[derive(Debug, Clone, Serialize)]
-struct DashboardData {
+pub struct DashboardData {
     charts: Vec<ChartData>,
     last_updated: SystemTime,
 }
 
 #[derive(Debug, Clone, Serialize)]
-struct ChartData {
+pub struct ChartData {
     id: String,
     title: String,
     chart_type: String,
@@ -659,14 +660,14 @@ impl SlaMonitor {
 }
 
 #[derive(Debug, Clone, Serialize)]
-struct SlaReport {
+pub struct SlaReport {
     window_hours: u64,
     services: Vec<SlaServiceReport>,
     generated_at: SystemTime,
 }
 
 #[derive(Debug, Clone, Serialize)]
-struct SlaServiceReport {
+pub struct SlaServiceReport {
     service: String,
     availability: f64,
     avg_response_time: f64,

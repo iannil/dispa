@@ -63,7 +63,15 @@ impl TcpProtocolHandler {
             stats: Arc::new(TcpStats::new()),
         }
     }
+}
 
+impl Default for TcpProtocolHandler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl TcpProtocolHandler {
     /// Handle TCP stream proxying
     async fn proxy_tcp_stream(
         &self,
@@ -93,7 +101,7 @@ impl TcpProtocolHandler {
                         break; // EOF
                     }
 
-                    if let Err(_) = target_write.write_all(&buffer[..bytes_read]).await {
+                    if (target_write.write_all(&buffer[..bytes_read]).await).is_err() {
                         break;
                     }
 
@@ -120,7 +128,7 @@ impl TcpProtocolHandler {
                         break; // EOF
                     }
 
-                    if let Err(_) = client_write.write_all(&buffer[..bytes_read]).await {
+                    if (client_write.write_all(&buffer[..bytes_read]).await).is_err() {
                         break;
                     }
 

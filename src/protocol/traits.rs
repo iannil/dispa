@@ -11,10 +11,11 @@ use tokio::net::TcpStream;
 use tokio_stream::Stream;
 
 /// Protocol type enumeration
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ProtocolType {
     /// HTTP/1.1 protocol
+    #[default]
     Http,
     /// HTTP/2 protocol
     Http2,
@@ -38,12 +39,6 @@ impl fmt::Display for ProtocolType {
             ProtocolType::Tcp => write!(f, "tcp"),
             ProtocolType::Udp => write!(f, "udp"),
         }
-    }
-}
-
-impl Default for ProtocolType {
-    fn default() -> Self {
-        ProtocolType::Http
     }
 }
 

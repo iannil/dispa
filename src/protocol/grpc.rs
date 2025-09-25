@@ -59,7 +59,15 @@ impl GrpcProtocolHandler {
             stats: Arc::new(GrpcStats::new()),
         }
     }
+}
 
+impl Default for GrpcProtocolHandler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl GrpcProtocolHandler {
     /// Check if request is a gRPC request
     fn is_grpc_request(request: &Request<Body>) -> bool {
         // gRPC uses HTTP/2 with specific content-type

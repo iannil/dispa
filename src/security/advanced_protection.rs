@@ -280,6 +280,7 @@ struct AdvancedRateLimiter {
 #[derive(Debug, Clone)]
 struct SlidingWindow {
     requests: Vec<Instant>,
+    #[allow(dead_code)]
     last_cleanup: Instant,
 }
 
@@ -330,6 +331,7 @@ impl AdvancedRateLimiter {
         self.check_rate_limit(&key, self.config.per_ip_rps).await
     }
 
+    #[allow(dead_code)]
     async fn check_endpoint_rate_limit(&self, endpoint: &str) -> bool {
         if let Some(&limit) = self.config.per_endpoint_rps.get(endpoint) {
             let key = format!("endpoint:{}", endpoint);
@@ -410,6 +412,7 @@ impl DdosDetector {
         false
     }
 
+    #[allow(dead_code)]
     async fn is_ip_banned(&self, ip: &str) -> bool {
         let banned = self.banned_ips.read().await;
         if let Some(&ban_time) = banned.get(ip) {
@@ -435,6 +438,7 @@ struct IpReputationSystem {
 struct ReputationScore {
     score: u8,
     last_updated: SystemTime,
+    #[allow(dead_code)]
     sources: Vec<String>,
 }
 
@@ -628,6 +632,7 @@ impl WebApplicationFirewall {
 #[derive(Debug, Clone)]
 struct WafResult {
     blocked: bool,
+    #[allow(dead_code)]
     rule_id: Option<String>,
     reason: String,
     severity: u8,
@@ -642,8 +647,11 @@ struct BotDetector {
 #[derive(Debug, Clone)]
 struct BehaviorPattern {
     request_intervals: Vec<Duration>,
+    #[allow(dead_code)]
     user_agents: Vec<String>,
+    #[allow(dead_code)]
     request_patterns: Vec<String>,
+    #[allow(dead_code)]
     score: u8,
     last_updated: Instant,
 }
@@ -813,7 +821,9 @@ struct ThreatIntelligence {
 struct ThreatInfo {
     threat_type: String,
     severity: u8,
+    #[allow(dead_code)]
     sources: Vec<String>,
+    #[allow(dead_code)]
     last_updated: SystemTime,
 }
 

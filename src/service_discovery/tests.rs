@@ -6,9 +6,12 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use crate::service_discovery::{
-    DnsServiceDiscovery, HealthCheckConfig, HealthStatus, ServiceDiscovery,
-    ServiceDiscoveryError, ServiceInstance,
+    DnsServiceDiscovery, HealthCheckConfig, HealthStatus, ServiceDiscovery, ServiceDiscoveryError,
+    ServiceInstance,
 };
+
+#[cfg(feature = "consul-discovery")]
+use crate::service_discovery::ConsulServiceDiscovery;
 
 // Helper function to create test service instance
 fn create_test_service_instance() -> ServiceInstance {
@@ -206,6 +209,11 @@ mod consul_service_discovery_tests {
         let _config = ConsulConfig::default();
 
         #[cfg(not(feature = "consul-discovery"))]
+        {
+            // Skip test when consul feature is not enabled
+        }
+
+        #[cfg(feature = "consul-discovery")]
         {
             let result = ConsulServiceDiscovery::new(_config).await;
             assert!(result.is_err());

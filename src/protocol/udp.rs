@@ -59,7 +59,15 @@ impl UdpProtocolHandler {
             stats: Arc::new(UdpStats::new()),
         }
     }
+}
 
+impl Default for UdpProtocolHandler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl UdpProtocolHandler {
     /// Handle UDP packet forwarding
     async fn proxy_udp_packets(
         &self,
@@ -93,9 +101,10 @@ impl UdpProtocolHandler {
                 Ok(Ok((bytes_received, sender_addr))) => {
                     if sender_addr == target_addr {
                         // Packet from target server, forward to client
-                        if let Err(_) = proxy_socket
+                        if (proxy_socket
                             .send_to(&buffer[..bytes_received], client_addr)
-                            .await
+                            .await)
+                            .is_err()
                         {
                             self.stats.error_count.fetch_add(1, Ordering::Relaxed);
                             break;

@@ -157,7 +157,7 @@ impl CacheEntry {
                 .to_string(),
         );
 
-        Ok(response.body(Body::from(self.body.clone()))?)
+        response.body(Body::from(self.body.clone()))
     }
 
     /// Check if entry matches ETag for conditional request

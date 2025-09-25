@@ -64,6 +64,12 @@ impl HttpProtocolHandler {
     }
 }
 
+impl Default for HttpProtocolHandler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Protocol for HttpProtocolHandler {
     fn protocol_type(&self) -> ProtocolType {
         ProtocolType::Http
@@ -146,6 +152,12 @@ impl Http2ProtocolHandler {
         Self {
             stats: Arc::new(HttpStats::new()),
         }
+    }
+}
+
+impl Default for Http2ProtocolHandler {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

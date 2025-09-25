@@ -211,11 +211,14 @@ impl ConsulServiceDiscovery {
 impl ServiceDiscovery for ConsulServiceDiscovery {
     async fn discover_services(
         &self,
-        service_name: &str,
+        _service_name: &str,
     ) -> ServiceDiscoveryResult<Vec<ServiceInstance>> {
         #[cfg(feature = "consul-discovery")]
         {
-            let url = format!("{}/v1/health/service/{}", self.config.address, service_name);
+            let url = format!(
+                "{}/v1/health/service/{}",
+                self.config.address, _service_name
+            );
             let mut request = self.client.get(&url).query(&[("passing", "true")]);
 
             if let Some(token) = &self.config.token {
@@ -278,10 +281,10 @@ impl ServiceDiscovery for ConsulServiceDiscovery {
         ))
     }
 
-    async fn register_service(&self, service: &ServiceInstance) -> ServiceDiscoveryResult<()> {
+    async fn register_service(&self, _service: &ServiceInstance) -> ServiceDiscoveryResult<()> {
         #[cfg(feature = "consul-discovery")]
         {
-            let consul_service = self.to_consul_service(service);
+            let consul_service = self.to_consul_service(_service);
             let url = format!("{}/v1/agent/service/register", self.config.address);
             let mut request = self.client.put(&url).json(&consul_service);
 
@@ -305,7 +308,10 @@ impl ServiceDiscovery for ConsulServiceDiscovery {
                 )));
             }
 
-            tracing::info!("Successfully registered service {} with Consul", service.id);
+            tracing::info!(
+                "Successfully registered service {} with Consul",
+                _service.id
+            );
             Ok(())
         }
 
@@ -317,12 +323,12 @@ impl ServiceDiscovery for ConsulServiceDiscovery {
         }
     }
 
-    async fn deregister_service(&self, service_id: &str) -> ServiceDiscoveryResult<()> {
+    async fn deregister_service(&self, _service_id: &str) -> ServiceDiscoveryResult<()> {
         #[cfg(feature = "consul-discovery")]
         {
             let url = format!(
                 "{}/v1/agent/service/deregister/{}",
-                self.config.address, service_id
+                self.config.address, _service_id
             );
             let mut request = self.client.put(&url);
 
@@ -348,7 +354,7 @@ impl ServiceDiscovery for ConsulServiceDiscovery {
 
             tracing::info!(
                 "Successfully deregistered service {} from Consul",
-                service_id
+                _service_id
             );
             Ok(())
         }
@@ -361,10 +367,10 @@ impl ServiceDiscovery for ConsulServiceDiscovery {
         }
     }
 
-    async fn health_check(&self, service_id: &str) -> ServiceDiscoveryResult<HealthStatus> {
+    async fn health_check(&self, _service_id: &str) -> ServiceDiscoveryResult<HealthStatus> {
         #[cfg(feature = "consul-discovery")]
         {
-            let url = format!("{}/v1/health/service/{}", self.config.address, service_id);
+            let url = format!("{}/v1/health/service/{}", self.config.address, _service_id);
             let mut request = self.client.get(&url);
 
             if let Some(token) = &self.config.token {
