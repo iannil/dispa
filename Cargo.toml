@@ -42,15 +42,17 @@ uuid = { version = "1.6", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 bytes = "1.5"
 rand = "0.8"
+sha1 = "0.10"  # For WebSocket key generation
 sha2 = "0.10"
 base64 = "0.22"
 bcrypt = "0.15"
 regex = "1.11.2"
 url = "2.5.7"
+flate2 = "1.0"  # For gzip compression
+reqwest = { version = "0.11", default-features = false, features = ["rustls-tls", "json"] }
 
 # Optional JWT RS256 verification (ring), and JWKS fetch (reqwest)
 ring = { version = "0.17", optional = true }
-reqwest = { version = "0.11", default-features = false, features = ["rustls-tls"], optional = true }
 
 # Optional WASM runtime
 wasmtime = { version = "34", optional = true }
@@ -84,9 +86,9 @@ wasm-plugin = ["wasmtime", "wasmtime-wasi"]
 # Enable JWT RS256 verification via ring
 jwt-rs256 = ["ring"]
 # Enable JWKS fetch via reqwest
-jwt-rs256-net = ["reqwest", "jwt-rs256"]
+jwt-rs256-net = ["jwt-rs256"]
 # Enable Consul service discovery
-consul-discovery = ["consul", "reqwest"]
+consul-discovery = ["consul"]
 # Enable etcd service discovery
 etcd-discovery = ["etcd-rs"]
 # Enable Kubernetes service discovery

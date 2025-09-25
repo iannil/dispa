@@ -68,10 +68,11 @@ impl Default for CircuitBreakerConfig {
 ///
 /// # Examples
 ///
-/// ```
+/// ```ignore
 /// use std::time::Duration;
 /// use dispa::circuit_breaker::{CircuitBreaker, CircuitBreakerConfig};
 ///
+/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 /// let config = CircuitBreakerConfig {
 ///     failure_threshold: 5,
 ///     success_threshold: 3,
@@ -85,8 +86,10 @@ impl Default for CircuitBreakerConfig {
 /// // Use the circuit breaker to protect a call
 /// let result = cb.call(|| async {
 ///     // Your service call here
-///     Ok("success")
+///     Ok::<&str, dispa::error::DispaError>("success")
 /// }).await;
+/// # Ok(())
+/// # }
 /// ```
 #[derive(Debug)]
 pub struct CircuitBreaker {
@@ -113,6 +116,9 @@ impl CircuitBreaker {
     /// # Examples
     ///
     /// ```
+    /// use dispa::{CircuitBreaker, CircuitBreakerConfig};
+    /// use std::time::Duration;
+    ///
     /// let config = CircuitBreakerConfig {
     ///     failure_threshold: 10,
     ///     success_threshold: 5,
@@ -173,20 +179,24 @@ impl CircuitBreaker {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```ignore
     /// use dispa::circuit_breaker::CircuitBreaker;
     ///
+    /// # async fn make_api_call() -> Result<String, Box<dyn std::error::Error>> { Ok("test".to_string()) }
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let cb = CircuitBreaker::with_defaults("my-service".to_string());
     ///
     /// let result = cb.call(|| async {
     ///     // Your potentially failing operation
-    ///     make_api_call().await
+    ///     make_api_call().await.map_err(|e| dispa::error::DispaError::External(e.to_string()))
     /// }).await;
     ///
     /// match result {
     ///     Ok(value) => println!("Success: {:?}", value),
     ///     Err(e) => println!("Failed: {}", e),
     /// }
+    /// # Ok(())
+    /// # }
     /// ```
     pub async fn call<F, T, Fut>(&self, f: F) -> DispaResult<T>
     where

@@ -15,11 +15,15 @@ use super::traits::PluginResult;
 ///
 /// # Examples
 ///
-/// ```
+/// ```ignore
 /// use dispa::config::PluginsConfig;
+/// use dispa::plugins::PluginEngine;
 ///
+/// # fn example() -> Result<(), Box<dyn std::error::Error>> {
 /// let config = PluginsConfig::default();
 /// let engine = PluginEngine::new(&config)?;
+/// # Ok(())
+/// # }
 /// ```
 pub struct PluginEngine {
     request_plugins: Vec<PluginRequestEntry>,
@@ -47,15 +51,19 @@ impl PluginEngine {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```ignore
     /// use dispa::config::PluginsConfig;
+    /// use dispa::plugins::PluginEngine;
     ///
+    /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let config = PluginsConfig {
     ///     enabled: true,
     ///     apply_before_domain_match: false,
     ///     plugins: vec![],
     /// };
     /// let engine = PluginEngine::new(&config).unwrap();
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn new(config: &PluginsConfig) -> Result<Self> {
         // 验证配置

@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use crate::service_discovery::{
-    ConsulServiceDiscovery, DnsServiceDiscovery, HealthCheckConfig, HealthStatus, ServiceDiscovery,
+    DnsServiceDiscovery, HealthCheckConfig, HealthStatus, ServiceDiscovery,
     ServiceDiscoveryError, ServiceInstance,
 };
 
@@ -203,11 +203,11 @@ mod consul_service_discovery_tests {
 
     #[tokio::test]
     async fn test_consul_service_discovery_without_feature() {
-        let config = ConsulConfig::default();
+        let _config = ConsulConfig::default();
 
         #[cfg(not(feature = "consul-discovery"))]
         {
-            let result = ConsulServiceDiscovery::new(config).await;
+            let result = ConsulServiceDiscovery::new(_config).await;
             assert!(result.is_err());
             assert!(matches!(
                 result.unwrap_err(),

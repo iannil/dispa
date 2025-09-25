@@ -1,11 +1,12 @@
 #![allow(dead_code)]
-use anyhow::Result;
 use hyper::{Body, HeaderMap, Response, StatusCode};
+use serde::{Deserialize, Serialize};
 use std::time::{Duration, SystemTime};
 
+pub mod advanced_strategies;
 pub mod etag;
 pub mod policy;
-pub mod storage;
+pub mod storage; // 高级缓存策略和CDN集成
 
 pub use etag::ETagManager;
 pub use policy::PolicyEngine;
@@ -33,6 +34,75 @@ pub struct CacheEntry {
     pub content_type: Option<String>,
     /// Size in bytes
     pub size: usize,
+}
+
+/// Serializable version of CacheEntry for storage
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SerializableCacheEntry {
+    /// Response status code as u16
+    pub status_code: u16,
+    /// Response headers as key-value pairs
+    pub headers: Vec<(String, String)>,
+    /// Response body
+    pub body: Vec<u8>,
+    /// Cache creation timestamp
+    pub created_at: SystemTime,
+    /// Time to live in seconds
+    pub ttl: Duration,
+    /// ETag value if present
+    pub etag: Option<String>,
+    /// Content type
+    pub content_type: Option<String>,
+    /// Size in bytes
+    pub size: usize,
+}
+
+impl From<CacheEntry> for SerializableCacheEntry {
+    fn from(entry: CacheEntry) -> Self {
+        let headers = entry
+            .headers
+            .iter()
+            .map(|(k, v)| (k.as_str().to_string(), v.to_str().unwrap_or("").to_string()))
+            .collect();
+
+        Self {
+            status_code: entry.status.as_u16(),
+            headers,
+            body: entry.body,
+            created_at: entry.created_at,
+            ttl: entry.ttl,
+            etag: entry.etag,
+            content_type: entry.content_type,
+            size: entry.size,
+        }
+    }
+}
+
+impl From<SerializableCacheEntry> for CacheEntry {
+    fn from(entry: SerializableCacheEntry) -> Self {
+        let status = StatusCode::from_u16(entry.status_code).unwrap_or(StatusCode::OK);
+        let mut headers = HeaderMap::new();
+
+        for (key, value) in entry.headers {
+            if let (Ok(key), Ok(value)) = (
+                key.parse::<hyper::header::HeaderName>(),
+                value.parse::<hyper::header::HeaderValue>(),
+            ) {
+                headers.insert(key, value);
+            }
+        }
+
+        Self {
+            status,
+            headers,
+            body: entry.body,
+            created_at: entry.created_at,
+            ttl: entry.ttl,
+            etag: entry.etag,
+            content_type: entry.content_type,
+            size: entry.size,
+        }
+    }
 }
 
 impl CacheEntry {
@@ -69,7 +139,7 @@ impl CacheEntry {
     }
 
     /// Convert to HTTP response
-    pub fn to_response(&self) -> Result<Response<Body>> {
+    pub fn to_response(&self) -> Result<Response<Body>, hyper::http::Error> {
         let mut response = Response::builder().status(self.status);
 
         // Copy headers

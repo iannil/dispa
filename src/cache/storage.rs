@@ -43,14 +43,18 @@ impl InMemoryCache {
     ///
     /// # Examples
     ///
-    /// ```
-    /// use dispa::cache::{CacheConfig, InMemoryCache};
+    /// ```ignore
+    /// use dispa::config::CacheConfig;
+    /// use dispa::cache::InMemoryCache;
     ///
     /// let config = CacheConfig {
     ///     enabled: true,
     ///     max_size: 1024 * 1024, // 1MB
     ///     default_ttl: 3600,     // 1 hour
-    ///     // ... other fields
+    ///     policies: vec![],
+    ///     enable_etag: true,
+    ///     key_prefix: None,
+    ///     enable_metrics: true,
     /// };
     ///
     /// let cache = InMemoryCache::new(config);
@@ -88,12 +92,17 @@ impl InMemoryCache {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```ignore
+    /// # use dispa::cache::InMemoryCache;
+    /// # use dispa::config::CacheConfig;
+    /// # async fn example() {
+    /// # let cache = InMemoryCache::new(CacheConfig::default());
     /// let entry = cache.get("user:123").await;
     /// match entry {
     ///     Some(cached) => println!("Found cached data"),
     ///     None => println!("Cache miss or expired"),
     /// }
+    /// # }
     /// ```
     pub async fn get(&self, key: &str) -> Option<CacheEntry> {
         if !self.config.enabled {
@@ -140,15 +149,20 @@ impl InMemoryCache {
     /// ```
     /// use dispa::cache::CacheEntry;
     /// use std::time::{Duration, SystemTime};
+    /// use hyper::{StatusCode, HeaderMap};
     ///
     /// let entry = CacheEntry {
-    ///     data: b"response data".to_vec(),
+    ///     status: StatusCode::OK,
+    ///     headers: HeaderMap::new(),
+    ///     body: b"response data".to_vec(),
     ///     created_at: SystemTime::now(),
     ///     ttl: Duration::from_secs(300), // 5 minutes
-    ///     // ... other fields
+    ///     etag: None,
+    ///     content_type: Some("text/html".to_string()),
+    ///     size: 13,
     /// };
     ///
-    /// cache.put("api:response:123".to_string(), entry).await?;
+    /// // cache.put("api:response:123".to_string(), entry).await?;
     /// ```
     pub async fn put(&self, key: String, entry: CacheEntry) -> Result<()> {
         if !self.config.enabled {

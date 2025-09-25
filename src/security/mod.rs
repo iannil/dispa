@@ -1,6 +1,7 @@
+pub mod advanced_protection;
 pub mod auth;
 pub mod basic_config;
-pub mod enhanced_auth;
+pub mod enhanced_auth; // 高级安全防护和DDoS保护
 
 // Core security modules
 pub mod config;

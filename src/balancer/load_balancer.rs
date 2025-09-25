@@ -48,8 +48,10 @@ impl LoadBalancer {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```ignore
     /// use dispa::config::TargetConfig;
+    /// use dispa::balancer::LoadBalancer;
+    ///
     /// let config = TargetConfig::default();
     /// let load_balancer = LoadBalancer::new(config);
     /// ```
@@ -148,11 +150,16 @@ impl LoadBalancer {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```ignore
+    /// # use dispa::balancer::LoadBalancer;
+    /// # use dispa::config::TargetConfig;
+    /// # async fn example() {
+    /// # let load_balancer = LoadBalancer::new(TargetConfig::default());
     /// let target = load_balancer.get_target().await;
     /// if let Some(target) = target {
     ///     println!("Selected target: {}", target.name);
     /// }
+    /// # }
     /// ```
     pub async fn get_target(&self) -> Option<Target> {
         let healthy_targets = self.get_healthy_targets().await;

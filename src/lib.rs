@@ -38,7 +38,9 @@ pub mod error; // 错误处理模块，定义统一的错误类型和处理
 pub mod graceful_shutdown; // 优雅关闭模块，确保零停机关闭
 pub mod logger; // 日志记录模块，支持文件和数据库双重存储
 pub mod monitoring; // 监控模块，提供指标收集和健康检查端点
+pub mod performance; // 性能优化和压力测试模块
 pub mod plugins; // 插件系统模块，支持请求和响应处理插件
+pub mod protocol; // 协议支持模块，提供多协议处理能力 (HTTP/1.1, HTTP/2, WebSocket, gRPC, TCP, UDP)
 pub mod proxy; // 代理服务器模块，核心HTTP代理功能
 pub mod retry; // 重试机制模块，提供智能重试策略
 pub mod routing; // 路由引擎模块，支持高级路由规则

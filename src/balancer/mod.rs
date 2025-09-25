@@ -40,6 +40,7 @@ pub mod load_balancer; // 负载均衡器实现，支持多种算法
 
 // New modular components
 pub mod algorithms; // 负载均衡算法实现
+pub mod enhanced_algorithms; // 增强负载均衡算法 (一致性哈希、地理路由、会话粘性等)
 pub mod metrics; // 指标收集和统计
 pub mod state; // 负载均衡器状态管理
 

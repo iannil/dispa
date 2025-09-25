@@ -3,7 +3,8 @@ pub mod collector;
 pub mod data;
 pub mod handlers;
 pub mod health;
-pub mod server;
+pub mod realtime_alerting;
+pub mod server; // 实时监控和告警系统
 
 use anyhow::Result;
 use tokio::task::JoinHandle;
