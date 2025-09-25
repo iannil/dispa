@@ -56,6 +56,21 @@ reqwest = { version = "0.11", default-features = false, features = ["rustls-tls"
 wasmtime = { version = "34", optional = true }
 wasmtime-wasi = { version = "34", optional = true }
 
+# Service Discovery dependencies
+async-trait = "0.1"
+tokio-stream = "0.1"
+trust-dns-resolver = "0.23"
+
+# Consul client (optional)
+consul = { version = "0.4", optional = true }
+
+# etcd client (optional)
+etcd-rs = { version = "1.0", optional = true }
+
+# Kubernetes client (optional)
+kube = { version = "0.87", optional = true }
+k8s-openapi = { version = "0.20", features = ["latest"], optional = true }
+
 [dev-dependencies]
 wiremock = "0.6"
 tempfile = "3.8"
@@ -70,3 +85,11 @@ wasm-plugin = ["wasmtime", "wasmtime-wasi"]
 jwt-rs256 = ["ring"]
 # Enable JWKS fetch via reqwest
 jwt-rs256-net = ["reqwest", "jwt-rs256"]
+# Enable Consul service discovery
+consul-discovery = ["consul", "reqwest"]
+# Enable etcd service discovery
+etcd-discovery = ["etcd-rs"]
+# Enable Kubernetes service discovery
+kubernetes-discovery = ["kube", "k8s-openapi"]
+# Enable all service discovery backends
+service-discovery-all = ["consul-discovery", "etcd-discovery", "kubernetes-discovery"]

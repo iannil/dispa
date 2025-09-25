@@ -345,8 +345,9 @@ mod tests {
                 connect_timeout_secs: Some(2),
                 request_timeout: Some(10),
             }),
-            security: None, // Security disabled for tests
-            plugins: None,  // Plugins disabled for tests
+            security: None,          // Security disabled for tests
+            plugins: None,           // Plugins disabled for tests
+            service_discovery: None, // Service discovery disabled for tests
         }
     }
 

@@ -92,6 +92,7 @@ fn create_end_to_end_test_config(target_urls: Vec<String>) -> Config {
         }),
         plugins: None,
         security: None,
+        service_discovery: None,
     }
 }
 

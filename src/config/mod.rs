@@ -39,6 +39,7 @@ pub mod monitoring; // 监控配置模块
 pub mod num_cpus; // CPU数量检测模块
 pub mod plugins; // 插件配置模块
 pub mod server; // 服务器配置模块
+pub mod service_discovery; // 服务发现配置模块
 pub mod targets; // 目标服务器配置模块
 
 use anyhow::Result;
@@ -55,6 +56,7 @@ pub use manager::ConfigManager;
 pub use monitoring::MonitoringConfig;
 pub use plugins::{PluginErrorStrategy, PluginStage, PluginType, PluginsConfig};
 pub use server::{DomainConfig, ServerConfig};
+pub use service_discovery::ServiceDiscoveryConfig;
 #[allow(unused_imports)]
 pub use targets::{
     HealthCheckConfig, LoadBalancingConfig, LoadBalancingType, Target, TargetConfig,
@@ -93,6 +95,8 @@ pub struct Config {
     pub plugins: Option<PluginsConfig>,
     /// 安全认证和授权配置（可选）
     pub security: Option<SecurityConfig>,
+    /// 服务发现配置（可选）
+    pub service_discovery: Option<ServiceDiscoveryConfig>,
 }
 
 impl Config {
@@ -192,6 +196,10 @@ impl Config {
 
         if let Some(plugins) = &self.plugins {
             plugins.validate()?;
+        }
+
+        if let Some(service_discovery) = &self.service_discovery {
+            service_discovery.validate()?;
         }
 
         // Validate domain configuration
@@ -301,6 +309,12 @@ impl Config {
     #[allow(dead_code)]
     pub fn is_tls_enabled(&self) -> bool {
         self.tls.as_ref().is_some_and(|t| t.cert_path.is_some())
+    }
+
+    /// Check if service discovery is enabled
+    #[allow(dead_code)]
+    pub fn is_service_discovery_enabled(&self) -> bool {
+        self.service_discovery.as_ref().is_some_and(|sd| sd.enabled)
     }
 }
 

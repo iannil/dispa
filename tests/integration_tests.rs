@@ -91,6 +91,7 @@ fn create_integration_test_config() -> Config {
         }),
         plugins: None,
         security: None,
+        service_discovery: None,
     }
 }
 
@@ -161,6 +162,7 @@ fn create_minimal_test_config() -> Config {
         }),
         plugins: None,
         security: None,
+        service_discovery: None,
     }
 }
 
@@ -649,6 +651,7 @@ async fn test_complete_configuration_integration() {
             }),
             plugins: None,
             security: None,
+            service_discovery: None,
         };
 
         match config.validate() {
@@ -741,6 +744,7 @@ async fn test_configuration_edge_cases_integration() {
             http_client: None,
             plugins: None,
             security: None,
+            service_discovery: None,
         };
 
         match edge_case_config.validate() {

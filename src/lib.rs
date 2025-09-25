@@ -43,6 +43,7 @@ pub mod proxy; // 代理服务器模块，核心HTTP代理功能
 pub mod retry; // 重试机制模块，提供智能重试策略
 pub mod routing; // 路由引擎模块，支持高级路由规则
 pub mod security; // 安全模块，提供认证和授权功能
+pub mod service_discovery; // 服务发现模块，支持多种服务发现后端
 pub mod state; // 统一状态管理模块，提供类型安全的状态访问
 pub mod tls; // TLS模块，提供SSL/TLS证书管理
 
@@ -57,4 +58,8 @@ pub use error::{DispaError, DispaResult, ErrorSeverity};
 pub use graceful_shutdown::{ResourceCleanup, ShutdownManager, ShutdownSignal, TaskHandle};
 pub use retry::{BackoffStrategy, ErrorRecovery, ExponentialBackoff, RetryConfig, RetryExecutor};
 pub use routing::{RoutingConfig, RoutingDecision, RoutingEngine};
+pub use service_discovery::{
+    ConsulServiceDiscovery, DnsServiceDiscovery, HealthStatus, ServiceChangeEvent,
+    ServiceDiscovery, ServiceInstance,
+};
 pub use tls::{CertificateConfig, TlsConfig, TlsManager, TlsVersion};

@@ -726,6 +726,7 @@ mod tests {
             http_client: None,
             plugins: None,
             security: None,
+            service_discovery: None,
         };
         // Add security section for redaction test
         cfg.security = Some(crate::security::SecurityConfig{ enabled: true, access_control: None, auth: None, rate_limit: Some(crate::security::GlobalRateLimitConfig{ enabled: false, rate_per_sec: 0.0, burst: 0.0 }), ddos: None, jwt: Some(crate::security::JwtConfig{ enabled: true, algorithm: "HS256".into(), secret: Some("s3cr3t".into()), leeway_secs: Some(0), issuer: None, audience: None, cache_enabled: Some(true), rs256_keys: None, jwks_url: None, jwks_cache_secs: None }) });
