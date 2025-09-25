@@ -76,11 +76,28 @@ impl PluginFactory {
 
     /// 根据配置创建响应阶段插件
     pub fn create_response_plugin(
-        _config: &PluginConfig,
+        config: &PluginConfig,
     ) -> Result<Option<Box<dyn super::traits::ResponsePlugin + Send + Sync>>> {
-        // 目前没有响应阶段插件的实现
-        // 这里可以扩展支持响应阶段插件
-        Ok(None)
+        if !config.enabled {
+            return Ok(None);
+        }
+
+        match config.plugin_type {
+            PluginType::HeaderInjector => {
+                let header_injector = HeaderInjector::from_config(&config.name, config.config.as_ref())?;
+                Ok(Some(Box::new(header_injector)))
+            }
+            PluginType::Blocklist => {
+                // Blocklist is typically request-only
+                Ok(None)
+            }
+            PluginType::Wasm => {
+                // WASM plugins could potentially support response stage
+                // but not implemented yet
+                Ok(None)
+            }
+            _ => Ok(None),
+        }
     }
 }
 
@@ -274,9 +291,7 @@ mod tests {
 
         let result = PluginValidator::validate_config(&config);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("requires 'path' parameter"));
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("requires configuration with 'path' parameter"));
     }
 }

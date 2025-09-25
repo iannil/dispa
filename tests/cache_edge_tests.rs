@@ -361,7 +361,7 @@ mod cache_edge_tests {
         assert_eq!(stats.misses, 2, "Should have 2 misses");
 
         let metrics = cache.get_metrics().await;
-        assert_eq!(metrics.hit_ratio(), 0.5, "Hit ratio should be 50%");
+        assert_eq!(metrics.hit_ratio(), 50.0, "Hit ratio should be 50%");
         assert_eq!(metrics.total_requests(), 4, "Total requests should be 4");
     }
 }

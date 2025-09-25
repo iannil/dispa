@@ -65,7 +65,7 @@ impl PluginEngine {
             return Ok(Self {
                 request_plugins: Vec::new(),
                 response_plugins: Vec::new(),
-                apply_before_domain_match: false,
+                apply_before_domain_match: config.apply_before_domain_match,
                 registry: PluginRegistry::new(),
             });
         }

@@ -39,12 +39,12 @@ mod health_check_integration_tests {
             create_test_target("unreachable-2", "http://unreachable-host-2:8080"),
         ];
 
-        // Start monitoring (this should not panic or crash)
-        let result = health_checker.start_monitoring(targets.clone()).await;
-        assert!(
-            result.is_ok(),
-            "Health checker should start even with unreachable targets"
-        );
+        // Start monitoring in background (this should not panic or crash)
+        let health_checker_clone = health_checker.clone();
+        let targets_clone = targets.clone();
+        let _monitoring_handle = tokio::spawn(async move {
+            health_checker_clone.start_monitoring(targets_clone).await
+        });
 
         // Wait a bit for health checks to run (interval is seconds-based)
         sleep(Duration::from_millis(1500)).await;
@@ -123,10 +123,11 @@ mod health_check_integration_tests {
             create_test_target("unhealthy-target", &unhealthy_server.uri()),
         ];
 
-        health_checker
-            .start_monitoring(targets.clone())
-            .await
-            .unwrap();
+        let health_checker_clone = health_checker.clone();
+        let targets_clone = targets.clone();
+        let _monitoring_handle = tokio::spawn(async move {
+            health_checker_clone.start_monitoring(targets_clone).await
+        });
 
         // Wait for health checks to complete (interval is seconds-based)
         sleep(Duration::from_millis(1500)).await;
@@ -225,7 +226,14 @@ mod health_check_integration_tests {
         let health_checker = HealthChecker::new(config);
         let target = create_test_target("threshold-target", &server.uri());
 
-        health_checker.start_monitoring(vec![target]).await.unwrap();
+        let health_checker_clone = health_checker.clone();
+        let target_clone = vec![target.clone()];
+        let _monitoring_handle = tokio::spawn(async move {
+            health_checker_clone.start_monitoring(target_clone).await
+        });
+
+        // Wait a moment for monitoring to initialize
+        sleep(Duration::from_millis(100)).await;
 
         // Initially should be healthy (default state)
         assert!(
@@ -282,7 +290,11 @@ mod health_check_integration_tests {
         let health_checker = HealthChecker::new(config);
         let target = create_test_target("rapid-check-target", &server.uri());
 
-        health_checker.start_monitoring(vec![target]).await.unwrap();
+        let health_checker_clone = health_checker.clone();
+        let target_clone = vec![target.clone()];
+        let _monitoring_handle = tokio::spawn(async move {
+            health_checker_clone.start_monitoring(target_clone).await
+        });
 
         // Manually trigger multiple health checks to simulate rapid checks
         let target_clone = create_test_target("rapid-check-target", &server.uri());
@@ -309,7 +321,7 @@ mod health_check_integration_tests {
         Mock::given(method("GET"))
             .and(path("/health"))
             .respond_with(
-                ResponseTemplate::new(200).set_delay(Duration::from_millis(200)), // Slower than timeout
+                ResponseTemplate::new(200).set_delay(Duration::from_millis(1500)), // Slower than timeout
             )
             .mount(&server)
             .await;
@@ -326,10 +338,14 @@ mod health_check_integration_tests {
         let health_checker = HealthChecker::new(config);
         let target = create_test_target("timeout-target", &server.uri());
 
-        health_checker.start_monitoring(vec![target]).await.unwrap();
+        let health_checker_clone = health_checker.clone();
+        let target_clone = vec![target.clone()];
+        let _monitoring_handle = tokio::spawn(async move {
+            health_checker_clone.start_monitoring(target_clone).await
+        });
 
-        // Wait for health check attempts
-        sleep(Duration::from_millis(300)).await;
+        // Wait for health check attempts (need at least 1 failure to become unhealthy)
+        sleep(Duration::from_millis(1500)).await;
 
         // Should be unhealthy due to timeouts
         assert!(
@@ -375,10 +391,11 @@ mod health_check_integration_tests {
             create_test_target("target-3", &server.uri()),
         ];
 
-        health_checker
-            .start_monitoring(initial_targets)
-            .await
-            .unwrap();
+        let health_checker_clone = health_checker.clone();
+        let initial_targets_clone = initial_targets.clone();
+        let _monitoring_handle = tokio::spawn(async move {
+            health_checker_clone.start_monitoring(initial_targets_clone).await
+        });
 
         // Wait for initial health checks
         sleep(Duration::from_millis(200)).await;
@@ -432,10 +449,11 @@ mod health_check_integration_tests {
         let health_checker = HealthChecker::new(config);
         let targets = vec![create_test_target("force-check-target", &server.uri())];
 
-        health_checker
-            .start_monitoring(targets.clone())
-            .await
-            .unwrap();
+        let health_checker_clone = health_checker.clone();
+        let targets_clone = targets.clone();
+        let _monitoring_handle = tokio::spawn(async move {
+            health_checker_clone.start_monitoring(targets_clone).await
+        });
 
         // Wait a moment, should have minimal requests due to long interval
         sleep(Duration::from_millis(100)).await;

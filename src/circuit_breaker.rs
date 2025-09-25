@@ -262,6 +262,8 @@ impl CircuitBreaker {
                 }
             }
             CircuitBreakerState::Closed => {
+                // Track total successes for statistics
+                self.success_count.fetch_add(1, Ordering::Relaxed);
                 // Reset failure count on success in closed state
                 self.reset_window_if_needed().await;
             }
@@ -460,7 +462,7 @@ mod tests {
             assert!(result.is_ok());
             assert_eq!(result.unwrap(), 42);
             let stats = cb.stats().await;
-            assert_eq!(stats.success_count, 0);
+            assert_eq!(stats.success_count, 1); // Now tracks total successes
             assert_eq!(stats.failure_count, 0);
         })
         .await

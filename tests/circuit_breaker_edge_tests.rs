@@ -18,7 +18,7 @@ mod circuit_breaker_edge_tests {
 
     /// Create a simple failure function
     async fn failure_fn() -> DispaResult<&'static str> {
-        Err(dispa::error::DispaError::internal("test failure"))
+        Err(dispa::error::DispaError::target_server("test-target", "test failure"))
     }
 
     /// Create a function that fails after N successful calls
@@ -34,7 +34,7 @@ mod circuit_breaker_edge_tests {
                 if count < n {
                     Ok(format!("success-{}", count))
                 } else {
-                    Err(dispa::error::DispaError::internal("failing after n calls"))
+                    Err(dispa::error::DispaError::target_server("test-target", "failing after n calls"))
                 }
             })
         }
@@ -46,7 +46,7 @@ mod circuit_breaker_edge_tests {
         let config = CircuitBreakerConfig {
             failure_threshold: 0, // Should open immediately on any failure
             success_threshold: 1,
-            timeout: Duration::from_millis(100),
+            timeout: Duration::from_secs(10), // Long timeout to prevent auto-recovery during test
             time_window: Duration::from_secs(60),
             min_requests: 1,
         };
@@ -68,7 +68,8 @@ mod circuit_breaker_edge_tests {
         );
 
         // Verify it's a circuit breaker error, not the function error
-        assert!(result.unwrap_err().to_string().contains("circuit breaker"));
+        let err_str = result.unwrap_err().to_string();
+        assert!(err_str.contains("Circuit breaker"));
     }
 
     /// Test circuit breaker with zero success threshold
@@ -268,7 +269,7 @@ mod circuit_breaker_edge_tests {
 
         let slow_failure = || async {
             sleep(Duration::from_millis(50)).await;
-            Err(dispa::error::DispaError::internal("slow failure"))
+            Err(dispa::error::DispaError::target_server("test-target", "slow failure"))
         };
 
         // Execute slow functions

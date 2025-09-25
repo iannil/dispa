@@ -97,6 +97,8 @@ impl InMemoryCache {
     /// ```
     pub async fn get(&self, key: &str) -> Option<CacheEntry> {
         if !self.config.enabled {
+            // When cache is disabled, still record miss for metrics
+            self.record_miss().await;
             return None;
         }
 
@@ -157,6 +159,11 @@ impl InMemoryCache {
 
         // Check if we need to evict entries to make space
         if let Err(e) = self.ensure_space(entry_size).await {
+            // If entry is too large for cache, silently succeed (don't store it)
+            if e.to_string().contains("Entry size exceeds cache max_size") {
+                debug!("Entry too large for cache, silently ignoring: {}", e);
+                return Ok(());
+            }
             warn!("Failed to ensure space for cache entry: {}", e);
             return Err(e);
         }
@@ -278,6 +285,11 @@ impl InMemoryCache {
 
         if current_size + needed_size <= self.max_size {
             return Ok(());
+        }
+
+        // If the entry is larger than max_size, we silently fail to store it
+        if needed_size > self.max_size {
+            return Err(anyhow::anyhow!("Entry size exceeds cache max_size"));
         }
 
         // Need to evict entries
