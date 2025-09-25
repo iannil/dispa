@@ -85,6 +85,7 @@ impl PluginExecutor {
     }
 
     /// 处理插件错误
+    #[allow(clippy::result_large_err)]
     fn handle_plugin_error(
         plugin_name: &str,
         strategy: PluginErrorStrategy,

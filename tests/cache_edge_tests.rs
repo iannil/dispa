@@ -1,6 +1,6 @@
-use dispa::cache::policy::PolicyEngine;
 use dispa::cache::{CacheConfig, CacheEntry, InMemoryCache};
-use std::time::{Duration, SystemTime};
+use hyper::{HeaderMap, StatusCode};
+use std::time::Duration;
 use tokio::time::sleep;
 
 /// Test cache system edge cases and boundary conditions
@@ -9,17 +9,12 @@ mod cache_edge_tests {
 
     /// Helper function to create a test cache entry
     fn create_test_entry(data: &str, ttl_secs: u64) -> CacheEntry {
-        CacheEntry {
-            data: data.as_bytes().to_vec(),
-            headers: std::collections::HashMap::new(),
-            status_code: 200,
-            created_at: SystemTime::now(),
-            ttl: Duration::from_secs(ttl_secs),
-            etag: None,
-            last_modified: None,
-            content_type: None,
-            size: data.len(),
-        }
+        CacheEntry::new(
+            StatusCode::OK,
+            HeaderMap::new(),
+            data.as_bytes().to_vec(),
+            Duration::from_secs(ttl_secs),
+        )
     }
 
     /// Test cache with zero max size
@@ -167,8 +162,11 @@ mod cache_edge_tests {
         assert!(found_count > 0, "At least some entries should be found");
 
         // Check cache stats
-        let stats = cache.stats().await;
-        assert!(stats.total_requests > 0, "Should have recorded requests");
+        let metrics = cache.get_metrics().await;
+        assert!(
+            metrics.total_requests() > 0,
+            "Should have recorded requests"
+        );
     }
 
     /// Test concurrent cache operations
@@ -217,7 +215,7 @@ mod cache_edge_tests {
         // Cleanup task
         let cache_clone = cache.clone();
         let cleanup_handle = tokio::spawn(async move {
-            for i in 0..10 {
+        for _i in 0..10 {
                 tokio::time::sleep(Duration::from_millis(10)).await;
                 cache_clone.clear().await;
             }
@@ -322,8 +320,8 @@ mod cache_edge_tests {
 
         // Stats should still work
         let stats = cache.stats().await;
-        assert_eq!(stats.hit_count, 0);
-        assert_eq!(stats.miss_count, 1); // The get call above should count as a miss
+        assert_eq!(stats.hits, 0);
+        assert_eq!(stats.misses, 1); // The get call above should count as a miss
     }
 
     /// Test cache metrics accuracy under various conditions
@@ -343,8 +341,8 @@ mod cache_edge_tests {
 
         // Initial state
         let stats = cache.stats().await;
-        assert_eq!(stats.hit_count, 0);
-        assert_eq!(stats.miss_count, 0);
+        assert_eq!(stats.hits, 0);
+        assert_eq!(stats.misses, 0);
 
         // Add some entries
         for i in 0..5 {
@@ -359,8 +357,8 @@ mod cache_edge_tests {
         let _ = cache.get("also-missing").await; // Miss
 
         let stats = cache.stats().await;
-        assert_eq!(stats.hit_count, 2, "Should have 2 hits");
-        assert_eq!(stats.miss_count, 2, "Should have 2 misses");
+        assert_eq!(stats.hits, 2, "Should have 2 hits");
+        assert_eq!(stats.misses, 2, "Should have 2 misses");
 
         let metrics = cache.get_metrics().await;
         assert_eq!(metrics.hit_ratio(), 0.5, "Hit ratio should be 50%");

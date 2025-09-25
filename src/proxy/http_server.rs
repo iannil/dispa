@@ -1,7 +1,8 @@
+#![allow(dead_code)]
 use anyhow::Result;
 use hyper::server::conn::AddrStream;
 use hyper::service::{make_service_fn, service_fn};
-use hyper::{Body, Request, Response, Server};
+use hyper::{Body, Request, Server};
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use tokio_rustls::TlsAcceptor;

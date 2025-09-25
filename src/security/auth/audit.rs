@@ -151,25 +151,23 @@ impl AuditLogger {
         // Find and remove old rotated log files
         if let Some(dir_path) = std::path::Path::new(&config.log_file).parent() {
             if let Ok(dir) = std::fs::read_dir(dir_path) {
-                for entry in dir {
-                    if let Ok(entry) = entry {
-                        let file_name = entry.file_name();
-                        let file_name_str = file_name.to_string_lossy();
+                for entry in dir.flatten() {
+                    let file_name = entry.file_name();
+                    let file_name_str = file_name.to_string_lossy();
 
-                        // Check if this is a rotated log file
-                        if file_name_str.contains(&config.log_file) && file_name_str.contains('.') {
-                            if let Some(timestamp_str) = file_name_str.split('.').last() {
-                                if let Ok(timestamp) = timestamp_str.parse::<u64>() {
-                                    if timestamp < cutoff_time {
-                                        if let Err(e) = std::fs::remove_file(entry.path()) {
-                                            error!(
-                                                "Failed to remove old log file {:?}: {}",
-                                                entry.path(),
-                                                e
-                                            );
-                                        } else {
-                                            info!("Removed old audit log: {:?}", entry.path());
-                                        }
+                    // Check if this is a rotated log file
+                    if file_name_str.contains(&config.log_file) && file_name_str.contains('.') {
+                        if let Some(timestamp_str) = file_name_str.split('.').next_back() {
+                            if let Ok(timestamp) = timestamp_str.parse::<u64>() {
+                                if timestamp < cutoff_time {
+                                    if let Err(e) = std::fs::remove_file(entry.path()) {
+                                        error!(
+                                            "Failed to remove old log file {:?}: {}",
+                                            entry.path(),
+                                            e
+                                        );
+                                    } else {
+                                        info!("Removed old audit log: {:?}", entry.path());
                                     }
                                 }
                             }
@@ -262,10 +260,12 @@ mod tests {
 
     #[test]
     fn test_selective_logging() {
-        let mut config = AuditConfig::default();
-        config.enabled = true;
-        config.log_successful_auth = false;
-        config.log_failed_auth = true;
+        let config = AuditConfig {
+            enabled: true,
+            log_successful_auth: false,
+            log_failed_auth: true,
+            ..Default::default()
+        };
 
         // Test that config controls what gets logged
         assert!(!config.log_successful_auth);

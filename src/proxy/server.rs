@@ -9,7 +9,7 @@ use tracing::{debug, error, info, warn};
 use super::handler::ProxyHandler;
 use super::http_client;
 use crate::balancer::LoadBalancer;
-use crate::config::{Config, DomainConfig};
+use crate::config::Config;
 use crate::error::DispaResult;
 use crate::logger::TrafficLogger;
 use crate::plugins::{PluginEngine, SharedPluginEngine};

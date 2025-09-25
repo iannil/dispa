@@ -1,9 +1,9 @@
+#![allow(dead_code)]
 use anyhow::Result;
 use clap::Parser;
 use std::net::SocketAddr;
 use tokio::signal;
 use tracing::{info, warn};
-
 mod app_state;
 mod balancer;
 mod cache;

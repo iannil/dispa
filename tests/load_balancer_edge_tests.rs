@@ -2,8 +2,7 @@ use dispa::balancer::load_balancer::LoadBalancer;
 use dispa::config::{
     HealthCheckConfig, LoadBalancingConfig, LoadBalancingType, Target, TargetConfig,
 };
-use std::time::Duration;
-use tokio::time::sleep;
+// no extra imports needed
 
 /// Test load balancer edge cases and boundary conditions
 mod load_balancer_edge_tests {

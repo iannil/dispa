@@ -9,9 +9,11 @@ use std::sync::Arc;
 
 /// Test plugin system edge cases and error handling
 mod plugin_edge_tests {
+    #![allow(dead_code)]
     use super::*;
 
     /// Mock plugin that can be configured to fail
+    #[allow(dead_code)]
     struct FailingPlugin {
         name: String,
         should_fail: bool,
@@ -69,6 +71,7 @@ mod plugin_edge_tests {
     }
 
     /// Mock plugin that short-circuits requests
+    #[allow(dead_code)]
     struct ShortCircuitPlugin {
         name: String,
         response_status: StatusCode,

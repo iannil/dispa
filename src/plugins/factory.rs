@@ -1,7 +1,6 @@
 use crate::config::plugins::PluginConfig;
-use crate::config::{PluginErrorStrategy, PluginStage, PluginType, PluginsConfig};
+use crate::config::{PluginStage, PluginType, PluginsConfig};
 use anyhow::Result;
-use serde_json::Value;
 use std::collections::HashMap;
 use tracing::warn;
 
@@ -38,7 +37,7 @@ impl PluginFactory {
             PluginType::Wasm => {
                 // WASM插件需要配置中指定路径
                 if let Some(config_value) = &config.config {
-                    if let Some(path) = config_value.get("path").and_then(|v| v.as_str()) {
+                    if config_value.get("path").and_then(|v| v.as_str()).is_some() {
                         let wasm_plugin =
                             WasmPlugin::from_config(&config.name, config.config.as_ref())?;
                         Box::new(wasm_plugin)
@@ -201,7 +200,7 @@ impl PluginValidator {
 mod tests {
     use super::*;
     use crate::config::plugins::{PluginConfig, PluginErrorStrategy, PluginStage, PluginType};
-    use std::collections::HashMap;
+    // no extra imports needed
 
     fn create_test_plugin_config(name: &str, plugin_type: PluginType) -> PluginConfig {
         PluginConfig {

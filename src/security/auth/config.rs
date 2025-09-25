@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 /// - Password policies and account lockout
 /// - IP whitelisting and geo-blocking
 /// - Rate limiting and DDoS protection
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct EnhancedSecurityConfig {
     pub enabled: bool,
     pub admin_auth: Option<AdminAuthConfig>,
@@ -88,18 +88,7 @@ pub struct AuditConfig {
     pub log_admin_actions: bool,
 }
 
-impl Default for EnhancedSecurityConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            admin_auth: None,
-            session_management: None,
-            mfa: None,
-            password_policy: None,
-            audit_logging: None,
-        }
-    }
-}
+// Default now derived via #[derive(Default)]
 
 impl Default for AdminAuthConfig {
     fn default() -> Self {

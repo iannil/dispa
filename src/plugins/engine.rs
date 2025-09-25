@@ -278,7 +278,7 @@ mod tests {
     use crate::config::plugins::{
         PluginConfig, PluginErrorStrategy, PluginStage, PluginType, PluginsConfig,
     };
-    use std::collections::HashMap;
+    // no extra imports needed
 
     fn create_test_plugins_config(enabled: bool) -> PluginsConfig {
         PluginsConfig {

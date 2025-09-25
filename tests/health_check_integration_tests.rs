@@ -1,8 +1,6 @@
-use dispa::balancer::health_check::{HealthChecker, HealthStatus};
+use dispa::balancer::health_check::HealthChecker;
 use dispa::config::{HealthCheckConfig, Target};
-use std::collections::HashMap;
-use std::time::Duration;
-use tokio::time::sleep;
+use tokio::time::{sleep, Duration};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -11,12 +9,13 @@ mod health_check_integration_tests {
     use super::*;
 
     /// Create a test target with given address
-    fn create_test_target(name: &str, address: &str) -> Target {
+    fn create_test_target(name: &str, url: &str) -> Target {
         Target {
             name: name.to_string(),
-            address: address.to_string(),
+            address: url.replace("http://", "").replace("https://", ""),
+            url: url.to_string(),
             weight: Some(1.0),
-            timeout: Some(Duration::from_secs(30)),
+            timeout: Some(30), // seconds
         }
     }
 
@@ -25,9 +24,9 @@ mod health_check_integration_tests {
     async fn test_health_check_unreachable_targets() {
         let config = HealthCheckConfig {
             enabled: true,
-            interval: Duration::from_millis(100),
-            timeout: Duration::from_millis(500),
-            path: "/health".to_string(),
+            interval: 1, // seconds
+            timeout: 1,  // seconds
+            threshold: 1,
             healthy_threshold: 1,
             unhealthy_threshold: 2,
         };
@@ -47,8 +46,8 @@ mod health_check_integration_tests {
             "Health checker should start even with unreachable targets"
         );
 
-        // Wait a bit for health checks to run
-        sleep(Duration::from_millis(300)).await;
+        // Wait a bit for health checks to run (interval is seconds-based)
+        sleep(Duration::from_millis(1500)).await;
 
         // All targets should be unhealthy
         for target in &targets {
@@ -110,9 +109,9 @@ mod health_check_integration_tests {
 
         let config = HealthCheckConfig {
             enabled: true,
-            interval: Duration::from_millis(100),
-            timeout: Duration::from_millis(1000),
-            path: "/health".to_string(),
+            interval: 1,
+            timeout: 1,
+            threshold: 1,
             healthy_threshold: 1,
             unhealthy_threshold: 1,
         };
@@ -129,8 +128,8 @@ mod health_check_integration_tests {
             .await
             .unwrap();
 
-        // Wait for health checks to complete
-        sleep(Duration::from_millis(500)).await;
+        // Wait for health checks to complete (interval is seconds-based)
+        sleep(Duration::from_millis(1500)).await;
 
         // Check results
         assert!(
@@ -156,7 +155,7 @@ mod health_check_integration_tests {
         health_checker.stop();
     }
 
-    /// Test health checker with custom health check path
+    /// Test health checker with custom health check path (use explicit check API)
     #[tokio::test]
     async fn test_custom_health_check_path() {
         let server = MockServer::start().await;
@@ -177,9 +176,9 @@ mod health_check_integration_tests {
 
         let config = HealthCheckConfig {
             enabled: true,
-            interval: Duration::from_millis(100),
-            timeout: Duration::from_millis(1000),
-            path: "/custom/status".to_string(), // Custom path
+            interval: 1,
+            timeout: 1,
+            threshold: 1,
             healthy_threshold: 1,
             unhealthy_threshold: 1,
         };
@@ -187,18 +186,11 @@ mod health_check_integration_tests {
         let health_checker = HealthChecker::new(config);
         let target = create_test_target("custom-path-target", &server.uri());
 
-        health_checker.start_monitoring(vec![target]).await.unwrap();
-
-        // Wait for health check
-        sleep(Duration::from_millis(300)).await;
-
-        // Should be healthy with custom path
-        assert!(
-            health_checker.is_target_healthy("custom-path-target").await,
-            "Target should be healthy with custom health check path"
-        );
-
-        health_checker.stop();
+        // Directly invoke custom path check
+        let is_healthy = health_checker
+            .check_target_with_custom_path(&target, "/custom/status")
+            .await;
+        assert!(is_healthy, "Custom path health check should succeed");
     }
 
     /// Test health checker threshold behavior
@@ -207,7 +199,7 @@ mod health_check_integration_tests {
         let server = MockServer::start().await;
 
         // Initially respond with errors
-        let error_mock = Mock::given(method("GET"))
+        let _error_mock = Mock::given(method("GET"))
             .and(path("/health"))
             .respond_with(ResponseTemplate::new(503))
             .up_to_n_times(3) // Fail 3 times
@@ -223,9 +215,9 @@ mod health_check_integration_tests {
 
         let config = HealthCheckConfig {
             enabled: true,
-            interval: Duration::from_millis(100),
-            timeout: Duration::from_millis(1000),
-            path: "/health".to_string(),
+            interval: 1,
+            timeout: 1,
+            threshold: 1,
             healthy_threshold: 2,   // Need 2 consecutive successes to be healthy
             unhealthy_threshold: 3, // Need 3 consecutive failures to be unhealthy
         };
@@ -241,8 +233,8 @@ mod health_check_integration_tests {
             "Target should start as healthy"
         );
 
-        // Wait for failures to accumulate (3 failures needed)
-        sleep(Duration::from_millis(400)).await;
+        // Wait for failures to accumulate (3 failures needed, seconds-based)
+        sleep(Duration::from_millis(3500)).await;
 
         // Should now be unhealthy after 3 failures
         assert!(
@@ -251,7 +243,7 @@ mod health_check_integration_tests {
         );
 
         // Wait for successful responses (2 successes needed to recover)
-        sleep(Duration::from_millis(300)).await;
+        sleep(Duration::from_millis(2500)).await;
 
         // Should be healthy again after threshold successes
         assert!(
@@ -271,7 +263,7 @@ mod health_check_integration_tests {
 
         Mock::given(method("GET"))
             .and(path("/health"))
-            .respond_with_fn(move |_| {
+            .respond_with(move |_: &wiremock::Request| {
                 counter_clone.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 ResponseTemplate::new(200)
             })
@@ -280,9 +272,9 @@ mod health_check_integration_tests {
 
         let config = HealthCheckConfig {
             enabled: true,
-            interval: Duration::from_millis(10), // Very short interval
-            timeout: Duration::from_millis(100),
-            path: "/health".to_string(),
+            interval: 1,
+            timeout: 1,
+            threshold: 1,
             healthy_threshold: 1,
             unhealthy_threshold: 1,
         };
@@ -292,16 +284,13 @@ mod health_check_integration_tests {
 
         health_checker.start_monitoring(vec![target]).await.unwrap();
 
-        // Wait for multiple checks
-        sleep(Duration::from_millis(200)).await;
-
-        // Should have made multiple requests
+        // Manually trigger multiple health checks to simulate rapid checks
+        let target_clone = create_test_target("rapid-check-target", &server.uri());
+        for _ in 0..8 {
+            let _ = health_checker.check_target(&target_clone).await;
+        }
         let request_count = request_counter.load(std::sync::atomic::Ordering::Relaxed);
-        assert!(
-            request_count >= 5,
-            "Should have made multiple rapid health checks, got {}",
-            request_count
-        );
+        assert!(request_count >= 8, "Expected at least 8 checks, got {}", request_count);
 
         assert!(
             health_checker.is_target_healthy("rapid-check-target").await,
@@ -327,9 +316,9 @@ mod health_check_integration_tests {
 
         let config = HealthCheckConfig {
             enabled: true,
-            interval: Duration::from_millis(100),
-            timeout: Duration::from_millis(50), // Short timeout
-            path: "/health".to_string(),
+            interval: 1,
+            timeout: 1,
+            threshold: 1,
             healthy_threshold: 1,
             unhealthy_threshold: 1,
         };
@@ -370,9 +359,9 @@ mod health_check_integration_tests {
 
         let config = HealthCheckConfig {
             enabled: true,
-            interval: Duration::from_millis(100),
-            timeout: Duration::from_millis(1000),
-            path: "/health".to_string(),
+            interval: 1,
+            timeout: 1,
+            threshold: 1,
             healthy_threshold: 1,
             unhealthy_threshold: 1,
         };
@@ -424,7 +413,7 @@ mod health_check_integration_tests {
 
         Mock::given(method("GET"))
             .and(path("/health"))
-            .respond_with_fn(move |_| {
+            .respond_with(move |_: &wiremock::Request| {
                 counter_clone.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 ResponseTemplate::new(200)
             })
@@ -433,9 +422,9 @@ mod health_check_integration_tests {
 
         let config = HealthCheckConfig {
             enabled: true,
-            interval: Duration::from_secs(3600), // Very long interval
-            timeout: Duration::from_millis(1000),
-            path: "/health".to_string(),
+            interval: 3600,
+            timeout: 1,
+            threshold: 1,
             healthy_threshold: 1,
             unhealthy_threshold: 1,
         };

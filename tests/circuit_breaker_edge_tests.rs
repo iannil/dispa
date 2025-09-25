@@ -7,6 +7,8 @@ use tokio::time::sleep;
 
 /// Test circuit breaker edge cases and boundary conditions
 mod circuit_breaker_edge_tests {
+    #![allow(clippy::redundant_closure)]
+    #![allow(dead_code)]
     use super::*;
 
     /// Create a simple success function
