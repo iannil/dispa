@@ -153,13 +153,10 @@ impl ProxyServerCore {
     }
 
     /// 获取域名配置句柄
-    pub fn domain_config_handle(
-        &self,
-    ) -> std::sync::Arc<std::sync::RwLock<DomainConfig>> {
+    pub fn domain_config_handle(&self) -> std::sync::Arc<std::sync::RwLock<DomainConfig>> {
         std::sync::Arc::clone(&self.domain_config)
     }
 }
 
 // Tests temporarily removed due to configuration API changes
 // TODO: Update tests to match current configuration structure
-

@@ -16,9 +16,7 @@ impl MetricsCollector {
         success: bool,
         response_time: Duration,
     ) {
-        let target_stats = connection_stats
-            .entry(target_name.to_string())
-            .or_default();
+        let target_stats = connection_stats.entry(target_name.to_string()).or_default();
 
         if !success {
             target_stats.total_errors += 1;
@@ -48,9 +46,7 @@ impl MetricsCollector {
         connection_stats: &mut HashMap<String, ConnectionStats>,
         target_name: &str,
     ) {
-        let target_stats = connection_stats
-            .entry(target_name.to_string())
-            .or_default();
+        let target_stats = connection_stats.entry(target_name.to_string()).or_default();
 
         target_stats.active_connections += 1;
         target_stats.total_requests += 1;

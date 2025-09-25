@@ -198,6 +198,6 @@ cargo install cargo-tarpaulin
 
 ## 相关文档
 
-- [CLAUDE.md](../CLAUDE.md) - 项目开发指南
+- [CLAUDE.md](../llm-friendly/CLAUDE.md) - 项目开发指南
 - [Makefile](../Makefile) - 便捷开发命令
 - [GitHub Actions](.github/workflows/) - CI/CD 配置

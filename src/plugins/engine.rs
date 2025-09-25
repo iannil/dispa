@@ -275,23 +275,23 @@ impl PluginEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::plugins::{PluginConfig, PluginType, PluginStage, PluginErrorStrategy, PluginsConfig};
+    use crate::config::plugins::{
+        PluginConfig, PluginErrorStrategy, PluginStage, PluginType, PluginsConfig,
+    };
     use std::collections::HashMap;
 
     fn create_test_plugins_config(enabled: bool) -> PluginsConfig {
         PluginsConfig {
             enabled,
             apply_before_domain_match: false,
-            plugins: vec![
-                PluginConfig {
-                    name: "header-injector".to_string(),
-                    plugin_type: PluginType::HeaderInjector,
-                    stage: PluginStage::Request,
-                    enabled: true,
-                    error_strategy: PluginErrorStrategy::Continue,
-                    config: None,
-                },
-            ],
+            plugins: vec![PluginConfig {
+                name: "header-injector".to_string(),
+                plugin_type: PluginType::HeaderInjector,
+                stage: PluginStage::Request,
+                enabled: true,
+                error_strategy: PluginErrorStrategy::Continue,
+                config: None,
+            }],
         }
     }
 
@@ -362,7 +362,9 @@ mod tests {
 
         // 测试不存在的插件名称
         let nonexistent_names = vec!["nonexistent".to_string()];
-        let result = engine.apply_request_subset(&nonexistent_names, &mut req).await;
+        let result = engine
+            .apply_request_subset(&nonexistent_names, &mut req)
+            .await;
         assert!(matches!(result, PluginResult::Continue));
     }
 }

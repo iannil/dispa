@@ -157,7 +157,7 @@ cargo doc --open
 ### 必读文件 (理解架构)
 - `src/lib.rs` - 模块概览和重要类型导出
 - `src/app_state.rs` - 应用状态管理和组件协调
-- `CLAUDE.md` - 开发规范和工作流程
+- `docs/llm-friendly/CLAUDE.md` - 开发规范和工作流程
 
 ### 配置文件 (理解功能)
 - `config/config.toml` - 主要配置示例

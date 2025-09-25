@@ -1,9 +1,9 @@
 use dispa::circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitBreakerState};
 use dispa::error::DispaResult;
-use std::time::Duration;
-use tokio::time::sleep;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
+use tokio::time::sleep;
 
 /// Test circuit breaker edge cases and boundary conditions
 mod circuit_breaker_edge_tests {
@@ -20,7 +20,10 @@ mod circuit_breaker_edge_tests {
     }
 
     /// Create a function that fails after N successful calls
-    fn failing_after_n(n: u32) -> impl Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = DispaResult<String>> + Send>> + Clone {
+    fn failing_after_n(
+        n: u32,
+    ) -> impl Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = DispaResult<String>> + Send>>
+           + Clone {
         let counter = Arc::new(AtomicU32::new(0));
         move || {
             let counter = counter.clone();
@@ -57,7 +60,10 @@ mod circuit_breaker_edge_tests {
 
         // Subsequent calls should be blocked
         let result = cb.call(|| success_fn()).await;
-        assert!(result.is_err(), "Call should be blocked when circuit is open");
+        assert!(
+            result.is_err(),
+            "Call should be blocked when circuit is open"
+        );
 
         // Verify it's a circuit breaker error, not the function error
         assert!(result.unwrap_err().to_string().contains("circuit breaker"));
@@ -273,7 +279,10 @@ mod circuit_breaker_edge_tests {
         assert!(result2.is_err());
 
         let elapsed = start.elapsed();
-        assert!(elapsed >= Duration::from_millis(100), "Should take at least 100ms for both calls");
+        assert!(
+            elapsed >= Duration::from_millis(100),
+            "Should take at least 100ms for both calls"
+        );
 
         // Circuit breaker should still work correctly
         assert_eq!(cb.state().await, CircuitBreakerState::Closed);

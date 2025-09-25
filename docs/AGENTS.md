@@ -4,7 +4,7 @@
 - src/: core crate. Key modules: balancer/, proxy/, routing/, cache/, security/, logger/, monitoring/, plugins/, tls/, config/
 - tests/: integration/E2E with tokio + wiremock; files end with `_tests.rs`.
 - config/: TOML samples (config.toml, plugins-example.toml, routing-plugins-example.toml).
-- docs/: user/dev manuals (docs/DEVELOPMENT.md, docs/PLUGINS.md); LLM helpers in docs/llm-friendly/ and LLM.md.
+- docs/: user/dev manuals (docs/DEVELOPMENT.md, docs/PLUGINS.md); LLM helpers in docs/llm-friendly/ and docs/llm-friendly/LLM_PLAN.md.
 - scripts/: QA helpers (scripts/qa.sh, scripts/test_with_timeout.py). CI in .github/workflows/.
 
 ## Environment & Toolchain
@@ -42,4 +42,4 @@
 
 ## Agent-Specific Notes
 - Use ripgrep (`rg`) for navigation; follow patterns in src/ and tests/.
-- Keep changes minimal and verifiable; run `make quick` often and `make qa` before committing; see `LLM.md`.
+- Keep changes minimal and verifiable; run `make quick` often and `make qa` before committing; see `docs/llm-friendly/LLM_PLAN.md`.

@@ -32,7 +32,9 @@ impl PluginExecutor {
             match result {
                 PluginResult::Continue => {
                     if entry.plugin.last_error_and_clear() {
-                        if let Err(response) = Self::handle_plugin_error(&entry.name, entry.strategy) {
+                        if let Err(response) =
+                            Self::handle_plugin_error(&entry.name, entry.strategy)
+                        {
                             return PluginResult::ShortCircuit(response);
                         }
                     }
@@ -68,7 +70,9 @@ impl PluginExecutor {
                 match result {
                     PluginResult::Continue => {
                         if entry.plugin.last_error_and_clear() {
-                            if let Err(response) = Self::handle_plugin_error(&entry.name, entry.strategy) {
+                            if let Err(response) =
+                                Self::handle_plugin_error(&entry.name, entry.strategy)
+                            {
                                 return PluginResult::ShortCircuit(response);
                             }
                         }
@@ -87,7 +91,10 @@ impl PluginExecutor {
     ) -> Result<(), Response<Body>> {
         match strategy {
             PluginErrorStrategy::Fail => {
-                warn!("Plugin {} reported error, failing per strategy", plugin_name);
+                warn!(
+                    "Plugin {} reported error, failing per strategy",
+                    plugin_name
+                );
                 let response = Response::builder()
                     .status(500)
                     .body(Body::from("Plugin error"))
@@ -154,7 +161,7 @@ impl PluginExecutor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{PluginErrorStrategy};
+    use crate::config::PluginErrorStrategy;
     use crate::plugins::traits::{PluginResult, RequestPlugin};
     use hyper::{Body, Request};
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -257,13 +264,11 @@ mod tests {
     async fn test_execute_request_plugins_error_continue() {
         let plugin = MockRequestPlugin::new("plugin", true, false); // 会出错
 
-        let entries = vec![
-            PluginExecutor::create_request_entry(
-                "plugin".to_string(),
-                PluginErrorStrategy::Continue, // 继续执行
-                Box::new(plugin),
-            ),
-        ];
+        let entries = vec![PluginExecutor::create_request_entry(
+            "plugin".to_string(),
+            PluginErrorStrategy::Continue, // 继续执行
+            Box::new(plugin),
+        )];
 
         let mut req = Request::builder().uri("/test").body(Body::empty()).unwrap();
         let result = PluginExecutor::execute_request_plugins(&entries, &mut req).await;
@@ -276,13 +281,11 @@ mod tests {
     async fn test_execute_request_plugins_error_fail() {
         let plugin = MockRequestPlugin::new("plugin", true, false); // 会出错
 
-        let entries = vec![
-            PluginExecutor::create_request_entry(
-                "plugin".to_string(),
-                PluginErrorStrategy::Fail, // 失败时停止
-                Box::new(plugin),
-            ),
-        ];
+        let entries = vec![PluginExecutor::create_request_entry(
+            "plugin".to_string(),
+            PluginErrorStrategy::Fail, // 失败时停止
+            Box::new(plugin),
+        )];
 
         let mut req = Request::builder().uri("/test").body(Body::empty()).unwrap();
         let result = PluginExecutor::execute_request_plugins(&entries, &mut req).await;
@@ -318,7 +321,9 @@ mod tests {
         // 只执行plugin1和plugin3（索引0和2）
         let subset_indices = vec![0, 2];
         let mut req = Request::builder().uri("/test").body(Body::empty()).unwrap();
-        let result = PluginExecutor::execute_request_plugins_subset(&entries, &subset_indices, &mut req).await;
+        let result =
+            PluginExecutor::execute_request_plugins_subset(&entries, &subset_indices, &mut req)
+                .await;
 
         // 应该成功，因为跳过了会短路的plugin2
         assert!(matches!(result, PluginResult::Continue));

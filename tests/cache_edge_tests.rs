@@ -1,5 +1,5 @@
-use dispa::cache::{CacheConfig, CacheEntry, InMemoryCache};
 use dispa::cache::policy::PolicyEngine;
+use dispa::cache::{CacheConfig, CacheEntry, InMemoryCache};
 use std::time::{Duration, SystemTime};
 use tokio::time::sleep;
 
@@ -45,7 +45,10 @@ mod cache_edge_tests {
 
         // Should not be able to retrieve the entry
         let retrieved = cache.get("test-key").await;
-        assert!(retrieved.is_none(), "Entry should not be stored with zero max size");
+        assert!(
+            retrieved.is_none(),
+            "Entry should not be stored with zero max size"
+        );
     }
 
     /// Test cache with very small max size
@@ -98,15 +101,24 @@ mod cache_edge_tests {
 
         // Entry with zero TTL
         let zero_ttl_entry = create_test_entry("zero ttl", 0);
-        cache.put("zero-ttl".to_string(), zero_ttl_entry).await.unwrap();
+        cache
+            .put("zero-ttl".to_string(), zero_ttl_entry)
+            .await
+            .unwrap();
 
         // Should be immediately expired
         let retrieved = cache.get("zero-ttl").await;
-        assert!(retrieved.is_none(), "Zero TTL entry should be expired immediately");
+        assert!(
+            retrieved.is_none(),
+            "Zero TTL entry should be expired immediately"
+        );
 
         // Entry with very short TTL
         let short_ttl_entry = create_test_entry("short ttl", 1);
-        cache.put("short-ttl".to_string(), short_ttl_entry).await.unwrap();
+        cache
+            .put("short-ttl".to_string(), short_ttl_entry)
+            .await
+            .unwrap();
 
         // Should be available immediately
         let retrieved = cache.get("short-ttl").await;
@@ -220,7 +232,10 @@ mod cache_edge_tests {
         // Cache should still be functional
         let test_entry = create_test_entry("final test", 300);
         let result = cache.put("final-test".to_string(), test_entry).await;
-        assert!(result.is_ok(), "Cache should still work after concurrent operations");
+        assert!(
+            result.is_ok(),
+            "Cache should still work after concurrent operations"
+        );
     }
 
     /// Test cache key edge cases
@@ -242,7 +257,10 @@ mod cache_edge_tests {
         let test_cases = vec![
             ("", "empty key"),
             ("a", "single character"),
-            ("very-long-key-with-many-characters-and-special-symbols-123-!@#$%^&*()", "long key with special chars"),
+            (
+                "very-long-key-with-many-characters-and-special-symbols-123-!@#$%^&*()",
+                "long key with special chars",
+            ),
             ("key with spaces", "key with spaces"),
             ("key\nwith\nnewlines", "key with newlines"),
             ("key\twith\ttabs", "key with tabs"),
@@ -256,7 +274,11 @@ mod cache_edge_tests {
             assert!(result.is_ok(), "Failed to store entry with {}", description);
 
             let retrieved = cache.get(key).await;
-            assert!(retrieved.is_some(), "Failed to retrieve entry with {}", description);
+            assert!(
+                retrieved.is_some(),
+                "Failed to retrieve entry with {}",
+                description
+            );
         }
     }
 
@@ -281,13 +303,22 @@ mod cache_edge_tests {
         assert!(result.is_ok(), "Put should succeed even when disabled");
 
         let retrieved = cache.get("test-key").await;
-        assert!(retrieved.is_none(), "Get should return None when cache is disabled");
+        assert!(
+            retrieved.is_none(),
+            "Get should return None when cache is disabled"
+        );
 
         let contains = cache.contains_key("test-key").await;
-        assert!(!contains, "Contains should return false when cache is disabled");
+        assert!(
+            !contains,
+            "Contains should return false when cache is disabled"
+        );
 
         let keys = cache.keys().await;
-        assert!(keys.is_empty(), "Keys should be empty when cache is disabled");
+        assert!(
+            keys.is_empty(),
+            "Keys should be empty when cache is disabled"
+        );
 
         // Stats should still work
         let stats = cache.stats().await;

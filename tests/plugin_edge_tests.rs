@@ -1,6 +1,8 @@
+use dispa::config::plugins::{
+    PluginConfig, PluginErrorStrategy, PluginStage, PluginType, PluginsConfig,
+};
 use dispa::plugins::engine::PluginEngine;
 use dispa::plugins::traits::{PluginResult, RequestPlugin, ResponsePlugin};
-use dispa::config::plugins::{PluginConfig, PluginType, PluginStage, PluginErrorStrategy, PluginsConfig};
 use hyper::{Body, Request, Response, StatusCode};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
@@ -105,16 +107,14 @@ mod plugin_edge_tests {
         let config = PluginsConfig {
             enabled: false, // Globally disabled
             apply_before_domain_match: false,
-            plugins: vec![
-                PluginConfig {
-                    name: "disabled-plugin".to_string(),
-                    plugin_type: PluginType::HeaderInjector,
-                    stage: PluginStage::Request,
-                    enabled: true,
-                    error_strategy: PluginErrorStrategy::Continue,
-                    config: None,
-                },
-            ],
+            plugins: vec![PluginConfig {
+                name: "disabled-plugin".to_string(),
+                plugin_type: PluginType::HeaderInjector,
+                stage: PluginStage::Request,
+                enabled: true,
+                error_strategy: PluginErrorStrategy::Continue,
+                config: None,
+            }],
         };
 
         let engine = PluginEngine::new(&config).unwrap();
@@ -126,10 +126,7 @@ mod plugin_edge_tests {
         assert_eq!(engine.response_plugin_names().len(), 0);
 
         // Request processing should pass through
-        let mut req = Request::builder()
-            .uri("/test")
-            .body(Body::empty())
-            .unwrap();
+        let mut req = Request::builder().uri("/test").body(Body::empty()).unwrap();
 
         let result = engine.apply_request(&mut req).await;
         assert!(matches!(result, PluginResult::Continue));
@@ -150,18 +147,12 @@ mod plugin_edge_tests {
         assert_eq!(engine.plugin_count(), (0, 0));
         assert!(!engine.has_plugins());
 
-        let mut req = Request::builder()
-            .uri("/test")
-            .body(Body::empty())
-            .unwrap();
+        let mut req = Request::builder().uri("/test").body(Body::empty()).unwrap();
 
         let result = engine.apply_request(&mut req).await;
         assert!(matches!(result, PluginResult::Continue));
 
-        let mut resp = Response::builder()
-            .status(200)
-            .body(Body::empty())
-            .unwrap();
+        let mut resp = Response::builder().status(200).body(Body::empty()).unwrap();
 
         // Should not panic with no plugins
         engine.apply_response(&mut resp).await;
@@ -173,24 +164,19 @@ mod plugin_edge_tests {
         let config = PluginsConfig {
             enabled: true,
             apply_before_domain_match: false,
-            plugins: vec![
-                PluginConfig {
-                    name: "existing-plugin".to_string(),
-                    plugin_type: PluginType::HeaderInjector,
-                    stage: PluginStage::Request,
-                    enabled: true,
-                    error_strategy: PluginErrorStrategy::Continue,
-                    config: None,
-                },
-            ],
+            plugins: vec![PluginConfig {
+                name: "existing-plugin".to_string(),
+                plugin_type: PluginType::HeaderInjector,
+                stage: PluginStage::Request,
+                enabled: true,
+                error_strategy: PluginErrorStrategy::Continue,
+                config: None,
+            }],
         };
 
         let engine = PluginEngine::new(&config).unwrap();
 
-        let mut req = Request::builder()
-            .uri("/test")
-            .body(Body::empty())
-            .unwrap();
+        let mut req = Request::builder().uri("/test").body(Body::empty()).unwrap();
 
         // Apply subset with mix of valid and invalid plugin names
         let plugin_names = vec![
@@ -204,10 +190,7 @@ mod plugin_edge_tests {
         assert!(matches!(result, PluginResult::Continue));
 
         // Test with only invalid names
-        let invalid_names = vec![
-            "missing-1".to_string(),
-            "missing-2".to_string(),
-        ];
+        let invalid_names = vec!["missing-1".to_string(), "missing-2".to_string()];
 
         let result = engine.apply_request_subset(&invalid_names, &mut req).await;
         assert!(matches!(result, PluginResult::Continue));
@@ -252,10 +235,7 @@ mod plugin_edge_tests {
 
         let engine = PluginEngine::new(&config).unwrap();
 
-        let mut req = Request::builder()
-            .uri("/test")
-            .body(Body::empty())
-            .unwrap();
+        let mut req = Request::builder().uri("/test").body(Body::empty()).unwrap();
 
         let result = engine.apply_request(&mut req).await;
         assert!(matches!(result, PluginResult::Continue));
@@ -273,47 +253,43 @@ mod plugin_edge_tests {
         let config = PluginsConfig {
             enabled: true,
             apply_before_domain_match: false,
-            plugins: vec![
-                PluginConfig {
-                    name: "both-stage-plugin".to_string(),
-                    plugin_type: PluginType::HeaderInjector,
-                    stage: PluginStage::Both, // Should be available in both stages
-                    enabled: true,
-                    error_strategy: PluginErrorStrategy::Continue,
-                    config: Some(serde_json::json!({
-                        "request_headers": {
-                            "X-Request-Plugin": "both-stage"
-                        },
-                        "response_headers": {
-                            "X-Response-Plugin": "both-stage"
-                        }
-                    })),
-                },
-            ],
+            plugins: vec![PluginConfig {
+                name: "both-stage-plugin".to_string(),
+                plugin_type: PluginType::HeaderInjector,
+                stage: PluginStage::Both, // Should be available in both stages
+                enabled: true,
+                error_strategy: PluginErrorStrategy::Continue,
+                config: Some(serde_json::json!({
+                    "request_headers": {
+                        "X-Request-Plugin": "both-stage"
+                    },
+                    "response_headers": {
+                        "X-Response-Plugin": "both-stage"
+                    }
+                })),
+            }],
         };
 
         let engine = PluginEngine::new(&config).unwrap();
 
         // Should be registered in both stages
         assert_eq!(engine.plugin_count(), (1, 1));
-        assert!(engine.request_plugin_names().contains(&"both-stage-plugin".to_string()));
-        assert!(engine.response_plugin_names().contains(&"both-stage-plugin".to_string()));
+        assert!(engine
+            .request_plugin_names()
+            .contains(&"both-stage-plugin".to_string()));
+        assert!(engine
+            .response_plugin_names()
+            .contains(&"both-stage-plugin".to_string()));
 
         // Test request stage
-        let mut req = Request::builder()
-            .uri("/test")
-            .body(Body::empty())
-            .unwrap();
+        let mut req = Request::builder().uri("/test").body(Body::empty()).unwrap();
 
         let result = engine.apply_request(&mut req).await;
         assert!(matches!(result, PluginResult::Continue));
         assert!(req.headers().contains_key("X-Request-Plugin"));
 
         // Test response stage
-        let mut resp = Response::builder()
-            .status(200)
-            .body(Body::empty())
-            .unwrap();
+        let mut resp = Response::builder().status(200).body(Body::empty()).unwrap();
 
         engine.apply_response(&mut resp).await;
         // Note: HeaderInjector for response would need to be implemented
@@ -326,20 +302,18 @@ mod plugin_edge_tests {
         let config = PluginsConfig {
             enabled: true,
             apply_before_domain_match: false,
-            plugins: vec![
-                PluginConfig {
-                    name: "concurrent-plugin".to_string(),
-                    plugin_type: PluginType::HeaderInjector,
-                    stage: PluginStage::Request,
-                    enabled: true,
-                    error_strategy: PluginErrorStrategy::Continue,
-                    config: Some(serde_json::json!({
-                        "request_headers": {
-                            "X-Concurrent": "test"
-                        }
-                    })),
-                },
-            ],
+            plugins: vec![PluginConfig {
+                name: "concurrent-plugin".to_string(),
+                plugin_type: PluginType::HeaderInjector,
+                stage: PluginStage::Request,
+                enabled: true,
+                error_strategy: PluginErrorStrategy::Continue,
+                config: Some(serde_json::json!({
+                    "request_headers": {
+                        "X-Concurrent": "test"
+                    }
+                })),
+            }],
         };
 
         let engine = std::sync::Arc::new(PluginEngine::new(&config).unwrap());

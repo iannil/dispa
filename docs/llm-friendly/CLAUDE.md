@@ -530,6 +530,6 @@ make install-tools # 安装推荐的开发工具
 
 ## 相关文档
 
-- [Git Hooks 详细说明](docs/git-hooks.md)
-- [GitHub Actions 工作流](.github/workflows/)
-- [开发工具和脚本](scripts/)
+- [Git Hooks 详细说明](../git-hooks.md)
+- [CI 工作流说明](../CI.md)
+- [开发工具和脚本](../../scripts/)

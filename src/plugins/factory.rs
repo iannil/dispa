@@ -25,11 +25,13 @@ impl PluginFactory {
 
         let plugin: Box<dyn RequestPlugin + Send + Sync> = match config.plugin_type {
             PluginType::HeaderInjector => {
-                let header_injector = HeaderInjector::from_config(&config.name, config.config.as_ref())?;
+                let header_injector =
+                    HeaderInjector::from_config(&config.name, config.config.as_ref())?;
                 Box::new(header_injector)
             }
             PluginType::HeaderOverride => {
-                let header_injector = HeaderInjector::from_config(&config.name, config.config.as_ref())?;
+                let header_injector =
+                    HeaderInjector::from_config(&config.name, config.config.as_ref())?;
                 Box::new(header_injector)
             }
             #[cfg(feature = "wasm-plugin")]
@@ -37,7 +39,8 @@ impl PluginFactory {
                 // WASM插件需要配置中指定路径
                 if let Some(config_value) = &config.config {
                     if let Some(path) = config_value.get("path").and_then(|v| v.as_str()) {
-                        let wasm_plugin = WasmPlugin::from_config(&config.name, config.config.as_ref())?;
+                        let wasm_plugin =
+                            WasmPlugin::from_config(&config.name, config.config.as_ref())?;
                         Box::new(wasm_plugin)
                     } else {
                         return Err(anyhow::anyhow!(
@@ -183,10 +186,7 @@ impl PluginValidator {
         let mut plugin_names = std::collections::HashSet::new();
         for plugin in &config.plugins {
             if !plugin_names.insert(&plugin.name) {
-                return Err(anyhow::anyhow!(
-                    "Duplicate plugin name: '{}'",
-                    plugin.name
-                ));
+                return Err(anyhow::anyhow!("Duplicate plugin name: '{}'", plugin.name));
             }
 
             // 验证单个插件配置
@@ -200,7 +200,7 @@ impl PluginValidator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::plugins::{PluginConfig, PluginType, PluginStage, PluginErrorStrategy};
+    use crate::config::plugins::{PluginConfig, PluginErrorStrategy, PluginStage, PluginType};
     use std::collections::HashMap;
 
     fn create_test_plugin_config(name: &str, plugin_type: PluginType) -> PluginConfig {
@@ -263,7 +263,10 @@ mod tests {
 
         let result = PluginValidator::validate_config(&config);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("name cannot be empty"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("name cannot be empty"));
     }
 
     #[test]
@@ -272,6 +275,9 @@ mod tests {
 
         let result = PluginValidator::validate_config(&config);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("requires 'path' parameter"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("requires 'path' parameter"));
     }
 }

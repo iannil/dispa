@@ -1,7 +1,7 @@
 use anyhow::Result;
 use hyper::server::conn::AddrStream;
 use hyper::service::{make_service_fn, service_fn};
-use hyper::{Request, Response, Body, Server};
+use hyper::{Body, Request, Response, Server};
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use tokio_rustls::TlsAcceptor;
@@ -93,7 +93,10 @@ impl HttpServerManager {
                     let handler = handler.clone();
 
                     tokio::spawn(async move {
-                        if let Err(e) = Self::handle_tls_connection(stream, peer_addr, tls_acceptor, handler).await {
+                        if let Err(e) =
+                            Self::handle_tls_connection(stream, peer_addr, tls_acceptor, handler)
+                                .await
+                        {
                             warn!("TLS connection error from {}: {}", peer_addr, e);
                         }
                     });

@@ -1,5 +1,7 @@
 use dispa::balancer::load_balancer::LoadBalancer;
-use dispa::config::{LoadBalancingType, Target, TargetConfig, LoadBalancingConfig, HealthCheckConfig};
+use dispa::config::{
+    HealthCheckConfig, LoadBalancingConfig, LoadBalancingType, Target, TargetConfig,
+};
 use std::time::Duration;
 use tokio::time::sleep;
 
@@ -129,9 +131,12 @@ mod load_balancer_edge_tests {
 
         // Heavy target should be selected much more frequently
         // Allowing some margin for randomness in implementation
-        assert!(heavy_count > light_count * 50,
+        assert!(
+            heavy_count > light_count * 50,
             "Heavy target should be selected much more: {} vs {}",
-            heavy_count, light_count);
+            heavy_count,
+            light_count
+        );
     }
 
     /// Test load balancer with zero weight targets
@@ -172,8 +177,10 @@ mod load_balancer_edge_tests {
         // Should never select zero-weight target
         for _ in 0..50 {
             if let Some(target) = load_balancer.get_target().await {
-                assert_ne!(target.name, "zero-weight-target",
-                    "Zero weight target should not be selected");
+                assert_ne!(
+                    target.name, "zero-weight-target",
+                    "Zero weight target should not be selected"
+                );
             }
         }
     }
@@ -232,6 +239,9 @@ mod load_balancer_edge_tests {
 
         // Load balancer should still be functional
         let target = load_balancer.get_target().await;
-        assert!(target.is_some(), "Load balancer should still work after concurrent access");
+        assert!(
+            target.is_some(),
+            "Load balancer should still work after concurrent access"
+        );
     }
 }
