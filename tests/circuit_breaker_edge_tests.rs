@@ -18,7 +18,10 @@ mod circuit_breaker_edge_tests {
 
     /// Create a simple failure function
     async fn failure_fn() -> DispaResult<&'static str> {
-        Err(dispa::error::DispaError::target_server("test-target", "test failure"))
+        Err(dispa::error::DispaError::target_server(
+            "test-target",
+            "test failure",
+        ))
     }
 
     /// Create a function that fails after N successful calls
@@ -34,7 +37,10 @@ mod circuit_breaker_edge_tests {
                 if count < n {
                     Ok(format!("success-{}", count))
                 } else {
-                    Err(dispa::error::DispaError::target_server("test-target", "failing after n calls"))
+                    Err(dispa::error::DispaError::target_server(
+                        "test-target",
+                        "failing after n calls",
+                    ))
                 }
             })
         }
@@ -269,7 +275,10 @@ mod circuit_breaker_edge_tests {
 
         let slow_failure = || async {
             sleep(Duration::from_millis(50)).await;
-            Err(dispa::error::DispaError::target_server("test-target", "slow failure"))
+            Err(dispa::error::DispaError::target_server(
+                "test-target",
+                "slow failure",
+            ))
         };
 
         // Execute slow functions

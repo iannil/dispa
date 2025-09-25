@@ -42,9 +42,8 @@ mod health_check_integration_tests {
         // Start monitoring in background (this should not panic or crash)
         let health_checker_clone = health_checker.clone();
         let targets_clone = targets.clone();
-        let _monitoring_handle = tokio::spawn(async move {
-            health_checker_clone.start_monitoring(targets_clone).await
-        });
+        let _monitoring_handle =
+            tokio::spawn(async move { health_checker_clone.start_monitoring(targets_clone).await });
 
         // Wait a bit for health checks to run (interval is seconds-based)
         sleep(Duration::from_millis(1500)).await;
@@ -125,9 +124,8 @@ mod health_check_integration_tests {
 
         let health_checker_clone = health_checker.clone();
         let targets_clone = targets.clone();
-        let _monitoring_handle = tokio::spawn(async move {
-            health_checker_clone.start_monitoring(targets_clone).await
-        });
+        let _monitoring_handle =
+            tokio::spawn(async move { health_checker_clone.start_monitoring(targets_clone).await });
 
         // Wait for health checks to complete (interval is seconds-based)
         sleep(Duration::from_millis(1500)).await;
@@ -228,9 +226,8 @@ mod health_check_integration_tests {
 
         let health_checker_clone = health_checker.clone();
         let target_clone = vec![target.clone()];
-        let _monitoring_handle = tokio::spawn(async move {
-            health_checker_clone.start_monitoring(target_clone).await
-        });
+        let _monitoring_handle =
+            tokio::spawn(async move { health_checker_clone.start_monitoring(target_clone).await });
 
         // Wait a moment for monitoring to initialize
         sleep(Duration::from_millis(100)).await;
@@ -292,9 +289,8 @@ mod health_check_integration_tests {
 
         let health_checker_clone = health_checker.clone();
         let target_clone = vec![target.clone()];
-        let _monitoring_handle = tokio::spawn(async move {
-            health_checker_clone.start_monitoring(target_clone).await
-        });
+        let _monitoring_handle =
+            tokio::spawn(async move { health_checker_clone.start_monitoring(target_clone).await });
 
         // Manually trigger multiple health checks to simulate rapid checks
         let target_clone = create_test_target("rapid-check-target", &server.uri());
@@ -302,7 +298,11 @@ mod health_check_integration_tests {
             let _ = health_checker.check_target(&target_clone).await;
         }
         let request_count = request_counter.load(std::sync::atomic::Ordering::Relaxed);
-        assert!(request_count >= 8, "Expected at least 8 checks, got {}", request_count);
+        assert!(
+            request_count >= 8,
+            "Expected at least 8 checks, got {}",
+            request_count
+        );
 
         assert!(
             health_checker.is_target_healthy("rapid-check-target").await,
@@ -340,9 +340,8 @@ mod health_check_integration_tests {
 
         let health_checker_clone = health_checker.clone();
         let target_clone = vec![target.clone()];
-        let _monitoring_handle = tokio::spawn(async move {
-            health_checker_clone.start_monitoring(target_clone).await
-        });
+        let _monitoring_handle =
+            tokio::spawn(async move { health_checker_clone.start_monitoring(target_clone).await });
 
         // Wait for health check attempts (need at least 1 failure to become unhealthy)
         sleep(Duration::from_millis(1500)).await;
@@ -394,7 +393,9 @@ mod health_check_integration_tests {
         let health_checker_clone = health_checker.clone();
         let initial_targets_clone = initial_targets.clone();
         let _monitoring_handle = tokio::spawn(async move {
-            health_checker_clone.start_monitoring(initial_targets_clone).await
+            health_checker_clone
+                .start_monitoring(initial_targets_clone)
+                .await
         });
 
         // Wait for initial health checks
@@ -451,9 +452,8 @@ mod health_check_integration_tests {
 
         let health_checker_clone = health_checker.clone();
         let targets_clone = targets.clone();
-        let _monitoring_handle = tokio::spawn(async move {
-            health_checker_clone.start_monitoring(targets_clone).await
-        });
+        let _monitoring_handle =
+            tokio::spawn(async move { health_checker_clone.start_monitoring(targets_clone).await });
 
         // Wait a moment, should have minimal requests due to long interval
         sleep(Duration::from_millis(100)).await;

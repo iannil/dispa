@@ -84,7 +84,8 @@ impl PluginFactory {
 
         match config.plugin_type {
             PluginType::HeaderInjector => {
-                let header_injector = HeaderInjector::from_config(&config.name, config.config.as_ref())?;
+                let header_injector =
+                    HeaderInjector::from_config(&config.name, config.config.as_ref())?;
                 Ok(Some(Box::new(header_injector)))
             }
             PluginType::Blocklist => {

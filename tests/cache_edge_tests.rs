@@ -215,7 +215,7 @@ mod cache_edge_tests {
         // Cleanup task
         let cache_clone = cache.clone();
         let cleanup_handle = tokio::spawn(async move {
-        for _i in 0..10 {
+            for _i in 0..10 {
                 tokio::time::sleep(Duration::from_millis(10)).await;
                 cache_clone.clear().await;
             }
