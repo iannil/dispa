@@ -452,6 +452,100 @@ prefix = "Bearer "
 # jwks_url = "https://example.com/.well-known/jwks.json"
 ```
 
+## 数据库配置 [database]
+
+Dispa 支持 SQLite 和 PostgreSQL 数据库用于流量日志存储。
+
+### SQLite 配置
+
+```toml
+[logging.database]
+# 使用 SQLite 文件数据库
+url = "sqlite:///absolute/path/to/traffic.db"
+
+# 或使用内存数据库（重启后数据丢失）
+# url = "sqlite::memory:"
+
+# 连接池配置
+max_connections = 5
+idle_timeout = 300  # 秒
+```
+
+### PostgreSQL 配置
+
+```toml
+[logging.database]
+# PostgreSQL 连接字符串
+url = "postgresql://user:password@localhost:5432/dispa"
+
+# 连接池配置
+max_connections = 10
+idle_timeout = 300  # 秒
+connect_timeout = 30  # 秒
+```
+
+### 数据库初始化
+
+#### SQLite 数据库
+
+SQLite 数据库会在首次连接时自动创建和初始化表结构。
+
+```bash
+# 手动创建数据库（可选）
+sqlx database create --database-url "sqlite:///$(pwd)/data/traffic.db"
+
+# 运行迁移（可选，应用会自动处理）
+sqlx migrate run --source migrations/sqlite \
+  --database-url "sqlite:///$(pwd)/data/traffic.db"
+```
+
+#### PostgreSQL 数据库
+
+PostgreSQL 需要预先创建数据库和运行迁移：
+
+```bash
+# 安装 sqlx-cli 工具
+cargo install sqlx-cli --no-default-features --features rustls,postgres
+
+# 设置数据库URL
+export DATABASE_URL="postgresql://user:password@localhost:5432/dispa"
+
+# 创建数据库
+sqlx database create
+
+# 运行迁移
+sqlx migrate run --source migrations/postgres
+```
+
+### 代码示例
+
+使用 Rust 代码连接数据库：
+
+```rust
+// SQLite 连接
+use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};
+
+let pool = SqlitePoolOptions::new()
+    .max_connections(5)
+    .connect("sqlite:///path/to/traffic.db")
+    .await?;
+
+// PostgreSQL 连接
+use sqlx::{PgPool, postgres::PgPoolOptions};
+
+let pool = PgPoolOptions::new()
+    .max_connections(10)
+    .connect("postgresql://user:password@localhost:5432/dispa")
+    .await?;
+```
+
+### 注意事项
+
+- SQLite 适合单机部署和开发测试环境
+- PostgreSQL 适合生产环境和多实例部署
+- MySQL 支持已禁用以避免安全漏洞（RUSTSEC-2023-0071）
+- 建议在生产环境中使用连接池以提高性能
+
 ## 配置验证
 
 ### 语法检查

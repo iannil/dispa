@@ -212,11 +212,13 @@ curl http://localhost:9090/metrics
 
 ## 📖 文档
 
+- **[文档总览](docs/README.md)** - 完整文档目录导航
 - **[快速开始指南](docs/QUICKSTART.md)** - 5分钟上手教程
 - **[完整用户手册](docs/USER_MANUAL.md)** - 详细配置和使用说明
+- **[项目状态](docs/PROJECT_STATUS.md)** - 当前功能实现状态和发展规划
+- **[配置文档](docs/CONFIG.md)** - 完整配置选项说明（包含数据库配置）
 - **[开发指南](docs/DEVELOPMENT.md)** - 架构设计和扩展开发
 - **[贡献者指南](docs/AGENTS.md)** - 开发者与代理协作者（LLM/工具）规范
-- **[数据库指南](docs/DATABASE.md)** - SQLite / PostgreSQL 连接与迁移
 - **[安全配置示例](docs/SECURITY.md)** - 访问控制 / 认证 / 全局限流 / DDoS 保护
 - **[管理界面](docs/ADMIN.md)** - Web 管理控制台 / 实时监控 / 配置管理
 - **[English Manual](docs/USER_MANUAL_EN.md)** - Full user manual in English
@@ -348,7 +350,7 @@ MIT License - 详见 [LICENSE](LICENSE) 文件
 
 <div align="center">
 
-**[快速开始](./docs/QUICKSTART.md)** • **[用户手册](./docs/USER_MANUAL.md)** • **[English Manual](./docs/USER_MANUAL_EN.md)** • **[插件开发](./docs/PLUGINS.md)** • **[开发指南](./docs/DEVELOPMENT.md)**
+**[文档总览](./docs/README.md)** • **[快速开始](./docs/QUICKSTART.md)** • **[用户手册](./docs/USER_MANUAL.md)** • **[English Manual](./docs/USER_MANUAL_EN.md)** • **[插件开发](./docs/PLUGINS.md)** • **[开发指南](./docs/DEVELOPMENT.md)**
 
 Made with ❤️ in Rust
 
