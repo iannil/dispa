@@ -219,7 +219,7 @@ mod consul_service_discovery_tests {
             assert!(result.is_err());
             assert!(matches!(
                 result.unwrap_err(),
-                ServiceDiscoveryError::BackendError(_)
+                ServiceDiscoveryError::ConnectionFailed(_)
             ));
         }
     }

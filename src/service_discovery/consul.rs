@@ -367,10 +367,10 @@ impl ServiceDiscovery for ConsulServiceDiscovery {
         }
     }
 
-    async fn health_check(&self, _service_id: &str) -> ServiceDiscoveryResult<HealthStatus> {
+    async fn health_check(&self, service_id: &str) -> ServiceDiscoveryResult<HealthStatus> {
         #[cfg(feature = "consul-discovery")]
         {
-            let url = format!("{}/v1/health/service/{}", self.config.address, _service_id);
+            let url = format!("{}/v1/health/service/{}", self.config.address, service_id);
             let mut request = self.client.get(&url);
 
             if let Some(token) = &self.config.token {

@@ -7,11 +7,13 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use dispa::service_discovery::{
-    ConsulServiceDiscovery, DnsServiceDiscovery, HealthCheckConfig, HealthStatus, ServiceDiscovery,
-    ServiceInstance,
+    DnsServiceDiscovery, HealthCheckConfig, HealthStatus, ServiceDiscovery, ServiceInstance,
 };
 
+#[cfg(feature = "consul-discovery")]
 use dispa::config::service_discovery::ConsulConfig;
+#[cfg(feature = "consul-discovery")]
+use dispa::service_discovery::ConsulServiceDiscovery;
 
 fn should_skip_integration_tests() -> bool {
     std::env::var("SKIP_INTEGRATION_TESTS").is_ok()
@@ -233,9 +235,11 @@ async fn test_service_discovery_error_handling() {
     // Test with invalid Consul configuration
     #[cfg(feature = "consul-discovery")]
     {
-        let mut bad_config = ConsulConfig::default();
-        bad_config.address = "http://invalid-consul-host:9999".to_string();
-        bad_config.connect_timeout = Duration::from_millis(100); // Very short timeout
+        let bad_config = ConsulConfig {
+            address: "http://invalid-consul-host:9999".to_string(),
+            connect_timeout: Duration::from_millis(100), // Very short timeout
+            ..Default::default()
+        };
 
         let result = ConsulServiceDiscovery::new(bad_config).await;
         assert!(result.is_err());
