@@ -116,8 +116,9 @@ pub enum PluginStage {
 }
 
 /// Plugin error handling strategies
-#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize)]
 pub enum PluginErrorStrategy {
+    #[default]
     Continue,
     Fail,
 }
@@ -129,11 +130,5 @@ impl Default for PluginsConfig {
             plugins: vec![],
             apply_before_domain_match: true,
         }
-    }
-}
-
-impl Default for PluginErrorStrategy {
-    fn default() -> Self {
-        Self::Continue
     }
 }
