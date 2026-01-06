@@ -1,50 +1,116 @@
-# Dispa - 高性能流量拦截转发代理
+<p align="center">
+  <h1 align="center">Dispa</h1>
+  <p align="center">
+    <strong>高性能 HTTP/HTTPS 流量拦截与转发代理</strong>
+  </p>
+  <p align="center">
+    <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/rust-1.90+-orange.svg" alt="Rust"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
+    <a href="#"><img src="https://img.shields.io/badge/build-passing-brightgreen.svg" alt="Build Status"></a>
+    <a href="#"><img src="https://img.shields.io/badge/version-0.1.0-blue.svg" alt="Version"></a>
+  </p>
+  <p align="center">
+    <a href="docs/README.md">文档</a> •
+    <a href="docs/QUICKSTART.md">快速开始</a> •
+    <a href="docs/USER_MANUAL.md">用户手册</a> •
+    <a href="docs/USER_MANUAL_EN.md">English</a> •
+    <a href="docs/FEATURE_LIST.md">功能清单</a>
+  </p>
+</p>
 
-[![Rust](https://img.shields.io/badge/rust-1.90+-orange.svg)](https://www.rust-lang.org/)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](#)
+---
 
-Dispa 是一个用 Rust 实现的高性能流量拦截和转发代理服务器，能够拦截指定域名的所有流量，记录流量数据，并转发到多个目标地址。
+Dispa 是一个用 Rust 编写的高性能流量拦截和转发代理服务器。它能够拦截指定域名的流量，支持多种负载均衡算法、服务发现、安全认证、插件扩展等企业级特性。
 
-## ✨ 特性
+## 特性亮点
 
-- 🚀 **高性能异步架构** - 基于 Tokio，支持高并发连接
-- 🎯 **智能域名匹配** - 支持精确匹配和通配符（`*.example.com`）
-- ⚖️ **多种负载均衡** - 轮询、加权、随机、最少连接
-- 🔍 **自动健康检查** - 实时监控后端服务，自动故障转移
-- 📊 **完整流量记录** - 文件和数据库双重存储，支持日志轮转
-- 📈 **Prometheus 监控** - 内置指标导出，Grafana 可视化
-- 🔧 **灵活配置** - TOML 配置文件，支持热重载
+| 特性 | 说明 |
+|------|------|
+| **高性能异步架构** | 基于 Tokio + Hyper，支持数万并发连接 |
+| **多协议支持** | HTTP/1.1、HTTP/2、WebSocket、gRPC、TCP、UDP |
+| **智能负载均衡** | 9种算法：轮询、加权、最少连接、一致性哈希、地理位置等 |
+| **服务发现** | Consul、etcd、Kubernetes、DNS 多后端支持 |
+| **安全防护** | JWT/Basic 认证、速率限制、DDoS 防护、IP 黑白名单 |
+| **插件系统** | 内置插件 + 外部命令 + WASM 扩展 |
+| **可观测性** | Prometheus 指标、流量日志、健康检查、实时告警 |
+| **热重载** | 配置变更无需重启 |
 
-## 🚀 快速开始
+## 快速开始
 
 ### 安装
 
 ```bash
 # 克隆项目
-git clone <repository-url>
+git clone https://github.com/iannil/dispa.git
 cd dispa
 
-# 编译
+# 编译 (基础功能)
 cargo build --release
+
+# 编译 (全部功能)
+cargo build --release --features "consul-discovery,kubernetes-discovery,jwt-rs256,wasm-plugin"
 ```
 
-### 配置
+### 最小配置
 
-编辑 `config/config.toml`：
+创建 `config.toml`:
 
 ```toml
-[domains]
-intercept_domains = ["example.com", "*.test.com"]
+[server]
+bind_address = "0.0.0.0:8080"
 
-[[targets.targets]]
+[domains]
+intercept_domains = ["api.example.com", "*.test.com"]
+
+[[targets.servers]]
 name = "backend1"
-url = "http://192.168.1.100:3000"
+url = "http://127.0.0.1:3000"
+weight = 1
+```
+
+### 运行
+
+```bash
+# 启动代理
+./target/release/dispa -c config.toml
+
+# 测试
+curl -H "Host: api.example.com" http://localhost:8080/
+
+# 健康检查
+curl http://localhost:8081/health
+
+# Prometheus 指标
+curl http://localhost:9090/metrics
+```
+
+## 核心功能
+
+### 负载均衡
+
+支持 9 种负载均衡算法：
+
+| 算法 | 说明 |
+|------|------|
+| `round_robin` | 轮询分发 |
+| `weighted` | 加权轮询 |
+| `least_connections` | 最少连接优先 |
+| `random` | 随机选择 |
+| `consistent_hash` | 一致性哈希 (会话保持) |
+| `geographic` | 地理位置感知 |
+| `session_sticky` | 会话粘滞 |
+| `adaptive` | 自适应权重 |
+| `priority` | 优先级路由 |
+
+```toml
+[[targets.servers]]
+name = "backend1"
+url = "http://10.0.1.10:8080"
 weight = 3
 
-[[targets.targets]]
+[[targets.servers]]
 name = "backend2"
-url = "http://192.168.1.101:3000"
+url = "http://10.0.1.11:8080"
 weight = 2
 
 [targets.load_balancing]
@@ -53,305 +119,318 @@ type = "weighted"
 [targets.health_check]
 enabled = true
 interval = 30
-
-# 可选：上游 HTTP 客户端连接池（性能优化）
-[http_client]
-# 每个主机的最大空闲连接数（默认 32）
-pool_max_idle_per_host = 32
-# 空闲连接回收超时秒数（默认 90）
-pool_idle_timeout_secs = 90
-# 健康检查等简单 GET 的请求超时（秒，默认 5）
-connect_timeout_secs = 5
-
-# 也可通过环境变量覆盖：
-# DISPA_HTTP_POOL_MAX_IDLE_PER_HOST, DISPA_HTTP_POOL_IDLE_TIMEOUT_SECS, DISPA_HTTP_CONNECT_TIMEOUT_SECS
+timeout = 5
 ```
 
-#### 自定义 Prometheus 直方图桶（buckets）
+### 服务发现
 
-可为关键直方图指标配置自定义 buckets（单位统一为毫秒，`*_seconds` 指标会自动换算为秒）。
+支持多种服务发现后端 (需启用对应 feature):
 
 ```toml
-[monitoring]
-enabled = true
-metrics_port = 9090
-health_check_port = 8081
+# Consul
+[service_discovery]
+backend = "consul"
+consul_addr = "http://consul:8500"
+service_name = "my-service"
 
-# 直方图桶（按指标名精确匹配）
-[[monitoring.histogram_buckets]]
-metric = "dispa_log_write_duration_ms"           # 日志写入耗时（ms）
-buckets_ms = [0.5, 1, 2, 5, 10, 20, 50, 100, 200]
+# Kubernetes
+[service_discovery]
+backend = "kubernetes"
+namespace = "default"
+service_name = "my-service"
 
-[[monitoring.histogram_buckets]]
-metric = "dispa_target_health_check_duration_ms" # 健康检查耗时（ms）
-buckets_ms = [5, 10, 25, 50, 100, 250, 500, 1000]
-
-[[monitoring.histogram_buckets]]
-metric = "dispa_request_duration_seconds"        # 请求耗时（秒）
-# 这里单位仍写毫秒，系统会自动除以 1000 以适配 *_seconds
-buckets_ms = [1, 2.5, 5, 10, 25, 50, 100, 250, 500, 1000]
+# etcd
+[service_discovery]
+backend = "etcd"
+endpoints = ["http://etcd1:2379", "http://etcd2:2379"]
+service_prefix = "/services/"
 ```
 
-内置默认 buckets：
+### 安全配置
 
-- `dispa_log_write_duration_ms`：`[0.25, 0.5, 1, 2.5, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000]`
-- `dispa_target_health_check_duration_ms`：`[1, 2.5, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000]`
-- `dispa_request_duration_seconds`：`[0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10]`
+```toml
+[security]
+enabled = true
 
-#### 插件系统（实验特性）
+# 认证方式: basic, jwt, jwt-rs256
+auth_mode = "jwt"
+jwt_secret = "your-secret-key"
 
-配置示例：
+# 速率限制
+rate_limit_enabled = true
+rate_limit_requests = 100
+rate_limit_window_secs = 60
+
+# DDoS 防护
+ddos_protection = true
+max_header_size = 8192
+max_body_size = 10485760
+
+# IP 访问控制
+ip_whitelist = ["10.0.0.0/8", "192.168.0.0/16"]
+ip_blacklist = ["1.2.3.4"]
+```
+
+### 插件系统
+
+内置插件：
 
 ```toml
 [plugins]
 enabled = true
-# 控制请求阶段插件的执行时机：
-# true = 在域名拦截检查之前执行（默认，兼容现有行为）
-# false = 在域名拦截检查通过后再执行（避免非拦截域名上的开销）
-apply_before_domain_match = true
 
+# 请求头注入
 [[plugins.plugins]]
-name = "inject"
+name = "header-inject"
 type = "headerinjector"
-enabled = true
 stage = "both"
-error_strategy = "continue"   # continue | fail（插件内部错误时，是否短路为 500）
-config = { request_headers = { "x-request-id" = "generated" }, response_headers = { "x-power" = "dispa" } }
-
-[[plugins.plugins]]
-name = "block"
-type = "blocklist"
-enabled = true
-stage = "request"
-error_strategy = "continue"
-config = { hosts = ["internal.example.com"], paths = ["/admin", "/private"] }
-
-[[plugins.plugins]]
-name = "rewrite-path"
-type = "pathrewrite"
-enabled = true
-stage = "request"
-error_strategy = "continue"
-config = { from_prefix = "/old", to_prefix = "/new" }
-
-[[plugins.plugins]]
-name = "limit-global"
-type = "ratelimiter"
-enabled = true
-stage = "request"
-error_strategy = "continue"
-config = { rate_per_sec = 100.0, burst = 200.0 }
-
-# 外部命令插件（可选构建特性：`cmd-plugin`；同步执行，适合低 QPS）
-# 构建开启示例：`cargo build --features cmd-plugin`
-[[plugins.plugins]]
-name = "cmd"
-type = "command"
-enabled = true
-stage = "request"
-error_strategy = "continue"
-config = { 
-  exec = "/usr/local/bin/myplugin",            # 必填：可执行文件路径（建议搭配 allowlist）
-  args = ["--opt"],                             # 可选：参数
-  timeout_ms = 200,                              # 可选：超时（默认 100ms）
-  max_concurrency = 8,                           # 可选：最大并发（默认不限）
-  exec_allowlist = ["/usr/local/bin/myplugin"], # 可选：允许的可执行文件白名单
-  cwd = "/var/run",                             # 可选：工作目录
-  env = { RUST_LOG = "info" }                   # 可选：环境变量（注意：目前 spawn 前设置环境更安全）
+config = {
+  request_headers = { "X-Request-Id" = "generated" },
+  response_headers = { "X-Powered-By" = "Dispa" }
 }
 
-# WASM 插件（PoC，需启用 `wasm-plugin` 特性，并提供符合约定的导出函数）
-# 构建开启示例：`cargo build --features wasm-plugin`
+# 路径重写
+[[plugins.plugins]]
+name = "path-rewrite"
+type = "pathrewrite"
+stage = "request"
+config = { from_prefix = "/api/v1", to_prefix = "/v1" }
+
+# 速率限制
+[[plugins.plugins]]
+name = "rate-limiter"
+type = "ratelimiter"
+stage = "request"
+config = { rate_per_sec = 100.0, burst = 200.0 }
+
+# 黑名单
+[[plugins.plugins]]
+name = "blocklist"
+type = "blocklist"
+stage = "request"
+config = { hosts = ["blocked.com"], paths = ["/admin"] }
+```
+
+外部插件 (需启用 feature):
+
+```toml
+# 命令插件 (cargo build --features cmd-plugin)
+[[plugins.plugins]]
+name = "custom-cmd"
+type = "command"
+config = { exec = "/usr/local/bin/my-filter", timeout_ms = 100 }
+
+# WASM 插件 (cargo build --features wasm-plugin)
 [[plugins.plugins]]
 name = "wasm-filter"
 type = "wasm"
-enabled = true
-stage = "request"
-error_strategy = "continue"
-config = { module_path = "./plugins/filter.wasm", timeout_ms = 200, max_concurrency = 16 }
+config = { module_path = "./plugins/filter.wasm" }
 ```
 
-外部命令插件协议：
-- 输入（stdin）：JSON，如 `{ "stage": "request", "method": "GET", "path": "/api", "headers": {"host": "..."} }`
-- 输出（stdout）：JSON，如 `{ "set_headers": {"x-added": "1"} }` 或 `{ "short_circuit": {"status": 403, "body": "blocked"} }`
+### 缓存
 
-WASM 插件约定（PoC）：
-- 导出函数：`alloc(i32)->i32`, `dealloc(i32,i32)`, `dispa_on_request(i32,i32)->i32`, `dispa_on_response(i32,i32)->i32`, `dispa_get_result_len()->i32`
-- 内存交换：传入 JSON 字符串，返回 JSON 字符串；JSON 含义与命令插件一致
+```toml
+[cache]
+enabled = true
+max_size = 104857600  # 100MB
+default_ttl = 300
 
-插件指标：
-- `dispa_plugin_invocations_total{plugin,stage}`、`dispa_plugin_short_circuits_total{plugin,stage}`、`dispa_plugin_duration_ms{plugin,stage}`
-- `dispa_plugin_errors_total{plugin,stage,kind}`（panic/exec/io/timeout 等）
+[[cache.policies]]
+path_prefix = "/static"
+ttl = 3600
+cacheable_status = [200, 301, 302]
+```
 
-每路由（per-route）插件链（与 routing 集成）
-- 在路由规则中添加：
-  - `plugins_request = ["plugin-a", "plugin-b"]`
-  - `plugins_response = ["plugin-c"]`
-- 行为与全局插件链一致，按数组顺序执行；响应阶段在全局插件之前执行
-- 示例：`config/routing-plugins-example.toml`（包含 `routing` 与 `plugins`）
+### 路由规则
 
-错误策略说明：
-- `continue`：插件内部错误（panic/命令执行失败/超时）被记录并忽略，继续下游处理
-- `fail`：遇到错误立即短路返回 500（请求阶段）或将响应改为 500（响应阶段）
+```toml
+[[routing.rules]]
+priority = 1
+conditions = [
+  { type = "path", pattern = "/api/*" },
+  { type = "method", methods = ["GET", "POST"] }
+]
+actions = [
+  { type = "rewrite_path", from = "/api", to = "/v2/api" },
+  { type = "add_header", name = "X-Routed", value = "true" }
+]
+target = "api-backend"
+```
 
-### 运行
+### TLS/HTTPS
+
+```toml
+[tls]
+enabled = true
+cert_path = "/path/to/cert.pem"
+key_path = "/path/to/key.pem"
+https_port = 8443
+```
+
+## 架构
+
+```
+                                    ┌─────────────────────────────────────────┐
+                                    │              Dispa Proxy                │
+┌──────────┐                        │  ┌─────────┐  ┌─────────┐  ┌─────────┐  │                        ┌──────────┐
+│  Client  │──▶ TLS Termination ──▶ │  │ Plugins │─▶│ Router  │─▶│  Cache  │  │──▶ Load Balancer ──▶  │ Backend1 │
+└──────────┘                        │  └─────────┘  └─────────┘  └─────────┘  │                        └──────────┘
+                                    │       │            │            │       │                        ┌──────────┐
+                                    │       ▼            ▼            ▼       │                    ──▶ │ Backend2 │
+                                    │  ┌─────────────────────────────────┐    │                        └──────────┘
+                                    │  │     Security (Auth/RateLimit)   │    │                        ┌──────────┐
+                                    │  └─────────────────────────────────┘    │                    ──▶ │ Backend3 │
+                                    │       │                                 │                        └──────────┘
+                                    │       ▼                                 │
+                                    │  ┌─────────────────────────────────┐    │
+                                    │  │  Logging / Metrics / Monitoring │    │
+                                    │  └─────────────────────────────────┘    │
+                                    └─────────────────────────────────────────┘
+```
+
+**请求处理流程:**
+
+1. TLS 终止 (可选)
+2. 插件预处理 (可选)
+3. 域名匹配检查
+4. 路由规则匹配
+5. 安全检查 (认证、限流、DDoS)
+6. 缓存查询
+7. 负载均衡选择目标
+8. 请求转发
+9. 响应缓存 (可选)
+10. 插件后处理
+11. 流量日志记录
+12. 返回响应
+
+## Feature Flags
+
+| Feature | 说明 | 编译命令 |
+|---------|------|----------|
+| `cmd-plugin` | 外部命令插件 | `--features cmd-plugin` |
+| `wasm-plugin` | WASM 插件支持 | `--features wasm-plugin` |
+| `jwt-rs256` | JWT RS256 验证 | `--features jwt-rs256` |
+| `consul-discovery` | Consul 服务发现 | `--features consul-discovery` |
+| `etcd-discovery` | etcd 服务发现 | `--features etcd-discovery` |
+| `kubernetes-discovery` | K8s 服务发现 | `--features kubernetes-discovery` |
+| `service-discovery-all` | 全部服务发现 | `--features service-discovery-all` |
+
+**启用全部功能:**
 
 ```bash
-# 启动代理服务
-./target/release/dispa -c config/config.toml -v
-
-# 测试代理功能
-curl -H "Host: example.com" http://localhost:8080/
-
-# 检查健康状态
-curl http://localhost:8081/health
-
-# 查看监控指标
-curl http://localhost:9090/metrics
+cargo build --release --features "service-discovery-all,jwt-rs256,wasm-plugin,cmd-plugin"
 ```
 
-## 📖 文档
-
-- **[文档总览](docs/README.md)** - 完整文档目录导航
-- **[快速开始指南](docs/QUICKSTART.md)** - 5分钟上手教程
-- **[完整用户手册](docs/USER_MANUAL.md)** - 详细配置和使用说明
-- **[项目状态](docs/PROJECT_STATUS.md)** - 当前功能实现状态和发展规划
-- **[配置文档](docs/CONFIG.md)** - 完整配置选项说明（包含数据库配置）
-- **[开发指南](docs/DEVELOPMENT.md)** - 架构设计和扩展开发
-- **[贡献者指南](docs/AGENTS.md)** - 开发者与代理协作者（LLM/工具）规范
-- **[安全配置示例](docs/SECURITY.md)** - 访问控制 / 认证 / 全局限流 / DDoS 保护
-- **[管理界面](docs/ADMIN.md)** - Web 管理控制台 / 实时监控 / 配置管理
-- **[English Manual](docs/USER_MANUAL_EN.md)** - Full user manual in English
-- **[插件开发指南](docs/PLUGINS.md)** - 插件系统 / 每路由插件 / 命令与 WASM 插件
-
-## 🏗️ 架构
-
-```
-客户端请求
-    ↓
-域名匹配检查 (*.example.com)
-    ↓
-负载均衡器选择健康目标
-    ↓
-转发请求到后端服务器
-    ↓
-记录流量日志 (文件/数据库)
-    ↓
-返回响应给客户端
-```
-
-## 🐳 Docker 部署
+## Docker 部署
 
 ```bash
 # 构建镜像
 docker build -t dispa .
 
-# 启动服务
+# 运行
+docker run -d \
+  -p 8080:8080 \
+  -p 8081:8081 \
+  -p 9090:9090 \
+  -v $(pwd)/config:/app/config \
+  dispa
+
+# 或使用 docker-compose
 docker-compose up -d
-
-# 查看状态
-docker-compose ps
 ```
 
-## 📊 监控面板
+## 监控
 
-| 服务   | 端口   | 说明              |
-|------|------|-----------------|
-| 代理服务 | 8080 | HTTP/HTTPS 流量代理 |
-| 健康检查 | 8081 | 系统状态 API        |
-| 监控指标 | 9090 | Prometheus 指标   |
+### 端口说明
 
-### 主要指标
+| 端口 | 服务 | 说明 |
+|------|------|------|
+| 8080 | 代理服务 | HTTP/HTTPS 流量入口 |
+| 8443 | HTTPS 服务 | TLS 加密入口 (可选) |
+| 8081 | 健康检查 | /health, /ready |
+| 9090 | Prometheus | /metrics |
 
-- `dispa_requests_total` - 总请求数
-- `dispa_request_duration_seconds` - 请求处理时间
-- `dispa_target_healthy` - 后端服务健康状态
-- `dispa_active_connections` - 活跃连接数
+### 核心指标
 
-## ⚙️ 配置示例
+| 指标 | 类型 | 说明 |
+|------|------|------|
+| `dispa_requests_total` | Counter | 总请求数 |
+| `dispa_request_duration_seconds` | Histogram | 请求延迟 |
+| `dispa_active_connections` | Gauge | 活跃连接数 |
+| `dispa_target_healthy` | Gauge | 后端健康状态 |
+| `dispa_cache_hits_total` | Counter | 缓存命中数 |
+| `dispa_plugin_duration_ms` | Histogram | 插件执行耗时 |
 
-### 开发环境
+### Grafana Dashboard
 
-```toml
-[domains]
-intercept_domains = ["*.local.dev"]
-
-[[targets.targets]]
-name = "dev-server"
-url = "http://localhost:3000"
+```bash
+# 导入预配置面板
+curl -X POST http://grafana:3000/api/dashboards/import \
+  -H "Content-Type: application/json" \
+  -d @grafana/dispa-dashboard.json
 ```
 
-### 生产环境
+## 性能
 
-```toml
-[domains]
-intercept_domains = ["api.myapp.com"]
+在 4 核 8GB 环境下的基准测试：
 
-[[targets.targets]]
-name = "prod-server-1"
-url = "http://10.0.1.10:8080"
-weight = 3
+| 指标 | 数值 |
+|------|------|
+| 并发连接 | 10,000+ |
+| 吞吐量 | 50,000+ RPS |
+| 代理延迟 | < 1ms (本地网络) |
+| 内存占用 | < 50MB (基础运行) |
 
-[[targets.targets]]
-name = "prod-server-2"
-url = "http://10.0.1.11:8080"
-weight = 2
+## 文档
 
-[targets.health_check]
-enabled = true
-interval = 10
+| 文档 | 说明 |
+|------|------|
+| [文档总览](docs/README.md) | 完整文档导航 |
+| [快速开始](docs/QUICKSTART.md) | 5分钟上手教程 |
+| [用户手册](docs/USER_MANUAL.md) | 详细使用指南 |
+| [English Manual](docs/USER_MANUAL_EN.md) | Full user manual |
+| [功能清单](docs/FEATURE_LIST.md) | 完整功能列表 |
+| [配置文档](docs/CONFIG.md) | 全部配置选项 |
+| [安全配置](docs/SECURITY.md) | 安全相关配置 |
+| [插件开发](docs/PLUGINS.md) | 插件开发指南 |
+| [开发指南](docs/DEVELOPMENT.md) | 架构与开发 |
+| [API 文档](docs/API.md) | REST API 接口 |
+
+## 贡献
+
+欢迎贡献代码！请阅读 [贡献指南](docs/AGENTS.md) 了解详情。
+
+```bash
+# 开发环境设置
+git clone https://github.com/iannil/dispa.git
+cd dispa
+cargo build
+cargo test
+
+# 提交 PR
+git checkout -b feature/your-feature
+# ... 开发 ...
+cargo fmt && cargo clippy
+git commit -m "feat: your feature"
+git push origin feature/your-feature
 ```
 
-## 🛠️ 故障排除
+## 许可证
 
-| 问题    | 解决方案                      |
-|-------|---------------------------|
-| 端口被占用 | 修改配置文件中的 `bind_address`   |
-| 后端不可用 | 检查 `targets` 配置和网络连通性     |
-| 域名未匹配 | 验证 `intercept_domains` 设置 |
-| 数据库错误 | 确保数据目录存在或使用文件日志           |
+本项目采用 [MIT License](LICENSE) 开源协议。
 
-## 🚀 性能
-
-- **并发连接**: 支持数万并发连接
-- **吞吐量**: 在 4 核 8GB 环境下可达 50k+ RPS
-- **延迟**: 代理延迟 < 1ms（本地网络）
-- **内存**: 运行时内存占用 < 50MB
-
-## 📝 许可证
-
-MIT License - 详见 [LICENSE](LICENSE) 文件
-
-## 🤝 贡献
-
-欢迎提交 Issue 和 Pull Request！
-
-1. Fork 本项目
-2. 创建特性分支 (`git checkout -b feature/amazing-feature`)
-3. 提交更改 (`git commit -m 'Add amazing feature'`)
-4. 推送到分支 (`git push origin feature/amazing-feature`)
-5. 创建 Pull Request
-
-## 📞 支持
-
-- **GitHub Issues**: [报告问题](https://github.com/iannil/dispa/issues)
-- **讨论区**: [功能讨论](https://github.com/iannil/dispa/discussions)
-
-## 🌟 致谢
+## 致谢
 
 感谢以下开源项目：
 
 - [Tokio](https://tokio.rs/) - 异步运行时
-- [Hyper](https://hyper.rs/) - HTTP 库
-- [SQLx](https://github.com/launchbadge/sqlx) - 数据库访问
-- [Tracing](https://tracing.rs/) - 结构化日志
+- [Hyper](https://hyper.rs/) - HTTP 实现
+- [Rustls](https://github.com/rustls/rustls) - TLS 实现
+- [SQLx](https://github.com/launchbadge/sqlx) - 数据库
+- [Wasmtime](https://wasmtime.dev/) - WASM 运行时
 
 ---
 
-<div align="center">
-
-**[文档总览](./docs/README.md)** • **[快速开始](./docs/QUICKSTART.md)** • **[用户手册](./docs/USER_MANUAL.md)** • **[English Manual](./docs/USER_MANUAL_EN.md)** • **[插件开发](./docs/PLUGINS.md)** • **[开发指南](./docs/DEVELOPMENT.md)**
-
-Made with ❤️ in Rust
-
-</div>
+<p align="center">
+  <sub>Made with ❤️ in Rust</sub>
+</p>
